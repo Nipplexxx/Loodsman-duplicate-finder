@@ -1,0 +1,195 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectTypeGuids>{416D63FD-0477-49AA-A954-A7C5B95A9B51};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <ProjectGuid>{1907AEBA-184A-4D5A-8045-680516C6D8BB}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>SecondProgrammPlagin</RootNamespace>
+    <AssemblyName>SecondProgrammPlagin</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Ascon.Plm.Common">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\Client\Ascon.Plm.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="Ascon.Plm.Loodsman.PluginLauncher">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\Client\Ascon.Plm.Loodsman.PluginLauncher.dll</HintPath>
+    </Reference>
+    <Reference Include="Ascon.Plm.Loodsman.PluginSDK">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\Client\Ascon.Plm.Loodsman.PluginSDK.dll</HintPath>
+    </Reference>
+    <Reference Include="Ascon.Plm.ServerApi, Version=18.0.0.1, Culture=neutral, PublicKeyToken=1a8d91619ba17a0e, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\AppServer\Ascon.Plm.ServerApi.dll</HintPath>
+    </Reference>
+    <Reference Include="Interop.Ask">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\Client\Plugins\C#\SampleNetPlugin\obj\Debug\Interop.Ask.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Interop.BOSimple">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\Client\Plugins\C#\SampleNetPlugin\obj\Debug\Interop.BOSimple.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Interop.DataProvider">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\Client\Plugins\C#\SampleNetPlugin\obj\Debug\Interop.DataProvider.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Interop.Loodsman">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\Client\Plugins\C#\SampleNetPlugin\obj\Debug\Interop.Loodsman.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Interop.LoodsmanObjects">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\Client\Plugins\C#\SampleNetPlugin\obj\Debug\Interop.LoodsmanObjects.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Interop.PDMObjects">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\Client\Plugins\C#\SampleNetPlugin\obj\Debug\Interop.PDMObjects.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+    <Reference Include="Microsoft.Analytics.Interfaces" />
+    <Reference Include="Microsoft.Analytics.Interfaces.Streaming" />
+    <Reference Include="Microsoft.Analytics.Types" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="check_project_type.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <COMReference Include="Loodsman">
+      <Guid>{7CC86059-0262-44D5-9AA3-033DB38F11EF}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanC3DViewer">
+      <Guid>{84F2CB6C-2F1F-489D-B33A-E13B2ECB2C4E}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanCalendar">
+      <Guid>{8C3A868E-6973-4B1C-80EB-A87AC269A207}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanEDrawings">
+      <Guid>{B90118E7-2E32-4073-91CD-72A874F6534E}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanHash">
+      <Guid>{D879B675-3C38-4AF1-B2A6-D4CAEB6917CA}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanObjects">
+      <Guid>{993330A6-6D54-40D6-9B30-67EE2A0FE3BB}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanObjectSelector">
+      <Guid>{F845DB37-45CB-4323-A90E-E48E81B3AE2C}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanServerApplication">
+      <Guid>{36281981-5E66-4277-94EE-5F490981CE89}</Guid>
+      <VersionMajor>9</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="LoodsmanUtils">
+      <Guid>{1CCBBAEB-52F0-40B5-BA77-89B9F40D9C19}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="PDMObjects">
+      <Guid>{10D3926C-2A54-4343-80AB-4A4B28899959}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="stdole">
+      <Guid>{00020430-0000-0000-C000-000000000046}</Guid>
+      <VersionMajor>2</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>primary</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>
