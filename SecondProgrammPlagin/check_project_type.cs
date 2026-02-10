@@ -1,6 +1,4 @@
 ﻿using System;
-using System.IO;
-using System.Text;
 using System.Collections.Generic;
 using System.Linq;
 using System.Xml;
@@ -47,6 +45,7 @@ namespace DeepDuplicateFinder
 
                 if (selectedId == 0)
                 {
+                    ShowMessage(call, "Не выбрана папка для анализа.");
                     return;
                 }
 
@@ -55,13 +54,15 @@ namespace DeepDuplicateFinder
                 {
                     call.RunMethod("SetFormat", new object[] { "xml" });
                 }
-                catch (Exception ex)
+                catch
                 {
+                    ShowMessage(call, "Ошибка установки XML формата.");
                     return;
                 }
 
                 // 3. Получаем информацию о папке
                 var folderInfo = GetObjectInfo(call, selectedId);
+                ShowMessage(call, $"Анализ папки: {folderInfo.Version}...");
 
                 // 4. Получаем словарь типов для замены ID на названия
                 _typeDictionary = GetTypeDictionary(call);
@@ -73,8 +74,11 @@ namespace DeepDuplicateFinder
                 {
                     // Возвращаем бинарный формат
                     try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
+                    ShowMessage(call, "В выбранной папке не найдено объектов для анализа.");
                     return;
                 }
+
+                ShowMessage(call, $"Найдено объектов: {allObjects.Count}. Обработка...");
 
                 // Заменяем ID типов на названия
                 foreach (var obj in allObjects)
@@ -90,6 +94,8 @@ namespace DeepDuplicateFinder
                 var objectsWithNames = allObjects
                     .Where(o => !string.IsNullOrEmpty(o.Name) && o.Name != $"Объект_{o.Id}")
                     .ToList();
+
+                int objectsWithNamesCount = objectsWithNames.Count;
 
                 // 6.1. Критические дубликаты по полному совпадению: Название + Тип + Версия
                 var fullDuplicates = objectsWithNames
@@ -112,18 +118,23 @@ namespace DeepDuplicateFinder
                 // Возвращаем бинарный формат
                 try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
 
-                // 7. Сохраняем отчет
-                string reportPath = SaveCombinedReport(folderInfo, allObjects.Count, objectsWithNames.Count,
+                // 7. Создаем HTML отчет
+                string reportPath = CreateHtmlReport(folderInfo, allObjects.Count, objectsWithNamesCount,
                     fullDuplicates, nameTypeDuplicates, totalRealDuplicates);
+
+                // 8. Показываем сообщение пользователю
+                ShowMessage(call, $"HTML отчет создан и открыт в браузере.\nПуть: {reportPath}");
             }
             catch (Exception ex)
             {
                 // Пытаемся вернуть бинарный формат в случае ошибки
                 try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
+                // Показываем сообщение об ошибке
+                ShowMessage(call, $"Ошибка при поиске дубликатов: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
-        private string SaveCombinedReport(ObjectInfo folderInfo,
+        private string CreateHtmlReport(ObjectInfo folderInfo,
                                       int totalObjectsCount,
                                       int objectsWithNamesCount,
                                       List<IGrouping<string, ObjectInfo>> fullDuplicates,
@@ -132,102 +143,48 @@ namespace DeepDuplicateFinder
         {
             try
             {
-                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                string safeName = ReplaceInvalidChars(folderInfo.Name);
-                string fileName = $"duplicates_report_{safeName}_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
-                string filePath = Path.Combine(desktop, fileName);
-
-                var sb = new StringBuilder();
-
-                // ШАПКА ОТЧЕТА
-                sb.AppendLine(new string('=', 70));
-                sb.AppendLine("ОТЧЕТ О ПОИСКЕ ДУБЛИКАТОВ В ПАПКЕ");
-                sb.AppendLine(new string('=', 70));
-                sb.AppendLine($"Дата: {DateTime.Now:dd.MM.yyyy HH:mm:ss}");
-                sb.AppendLine($"Название папка: {folderInfo.Version} (ID: {folderInfo.Id})");
-                sb.AppendLine($"Тип: {folderInfo.Type}");
-                sb.AppendLine($"Состояние: {folderInfo.State}");
-                sb.AppendLine();
-                sb.AppendLine(new string('-', 70));
-                sb.AppendLine();
-
-                sb.AppendLine($"ВСЕГО ОБЪЕКТОВ В ПАПКЕ: {totalObjectsCount}");
-                sb.AppendLine($"Объектов с заполненными названиями: {objectsWithNamesCount}");
-                sb.AppendLine();
-
-                // Информация о дубликатах
-                sb.AppendLine("СТАТИСТИКА ДУБЛИКАТОВ:");
-                sb.AppendLine($"• Критические (Название+Тип+Версия): {fullDuplicates.Count}");
-                sb.AppendLine($"• Реальные дубликаты (Название+Тип): {nameTypeDuplicates.Count}");
-                sb.AppendLine($"• ВСЕГО РЕАЛЬНЫХ ДУБЛИКАТОВ: {totalRealDuplicates}");
-                sb.AppendLine();
-
-                // Если есть дубликаты, показываем их
-                if (totalRealDuplicates > 0)
-                {
-                    if (fullDuplicates.Count > 0)
-                    {
-                        sb.AppendLine("КРИТИЧЕСКИЕ ДУБЛИКАТЫ (полное совпадение):");
-                        sb.AppendLine(new string('-', 50));
-                        int groupNum = 1;
-                        foreach (var group in fullDuplicates.OrderByDescending(g => g.Count()))
-                        {
-                            string[] parts = group.Key.Split('|');
-                            sb.AppendLine($"ГРУППА #{groupNum++}: '{parts[0]}' (Тип: '{parts[1]}', Версия: '{parts[2]}')");
-                            sb.AppendLine($"Количество: {group.Count()} объектов");
-                            sb.AppendLine();
-
-                            foreach (var obj in group.OrderBy(o => o.Id))
-                            {
-                                sb.AppendLine($"  ID: {obj.Id}");
-                                sb.AppendLine($"    Название: {obj.Name}");
-                                sb.AppendLine($"    Тип: {obj.Type}");
-                                sb.AppendLine($"    Версия: {obj.Version}");
-                                sb.AppendLine($"    Состояние: {obj.State}");
-                                sb.AppendLine();
-                            }
-                            sb.AppendLine(new string('-', 50));
-                            sb.AppendLine();
-                        }
-                    }
-
-                    if (nameTypeDuplicates.Count > 0)
-                    {
-                        sb.AppendLine("РЕАЛЬНЫЕ ДУБЛИКАТЫ (одинаковое название, тип и версия):");
-                        sb.AppendLine(new string('-', 50));
-                        int groupNum = 1;
-                        foreach (var group in nameTypeDuplicates.OrderByDescending(g => g.Count()))
-                        {
-                            string[] parts = group.Key.Split('|');
-                            sb.AppendLine($"ГРУППА #{groupNum++}: '{parts[0]}' (Тип: '{parts[1]}')");
-                            sb.AppendLine($"Количество: {group.Count()} объектов");
-                            sb.AppendLine();
-
-                            foreach (var obj in group.OrderBy(o => o.Version).ThenBy(o => o.Id))
-                            {
-                                sb.AppendLine($"  ID: {obj.Id}");
-                                sb.AppendLine($"    Название: {obj.Name}");
-                                sb.AppendLine($"    Тип: {obj.Type}");
-                                sb.AppendLine($"    Версия: {obj.Version}");
-                                sb.AppendLine($"    Состояние: {obj.State}");
-                                sb.AppendLine();
-                            }
-                            sb.AppendLine(new string('-', 50));
-                            sb.AppendLine();
-                        }
-                    }
-                }
-                else
-                {
-                    sb.AppendLine("РЕАЛЬНЫЕ ДУБЛИКАТЫ НЕ НАЙДЕНЫ");
-                }
-
-                File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
-                return filePath;
+                var htmlGenerator = new HtmlReportGenerator();
+                return htmlGenerator.CreateHtmlReport(folderInfo, totalObjectsCount, objectsWithNamesCount,
+                    fullDuplicates, nameTypeDuplicates, totalRealDuplicates);
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка сохранения отчета: {ex.Message}");
+                throw new Exception($"Ошибка создания HTML отчета: {ex.Message}");
+            }
+        }
+
+        private void ShowMessage(INetPluginCall call, string message)
+        {
+            try
+            {
+                // Пробуем разные методы для показа сообщений
+                try
+                {
+                    call.RunMethod("ShowMessage", new object[] { message });
+                }
+                catch
+                {
+                    try
+                    {
+                        call.RunMethod("ShowErrorMessage", new object[] { message });
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            call.RunMethod("ShowInfoMessage", new object[] { message });
+                        }
+                        catch
+                        {
+                            // Если не получается показать через API, записываем в лог
+                            System.Diagnostics.Debug.WriteLine(message);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Игнорируем ошибки показа сообщений
             }
         }
 
@@ -281,7 +238,8 @@ namespace DeepDuplicateFinder
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка получения словаря типов: {ex.Message}");
+                // Не бросаем исключение, чтобы не прерывать работу
+                return new Dictionary<int, string>();
             }
 
             return typeDict;
@@ -326,7 +284,8 @@ namespace DeepDuplicateFinder
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка GetPropObjects: {ex.Message}");
+                // Возвращаем объект с минимальной информацией
+                return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
             }
 
             return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
@@ -382,7 +341,8 @@ namespace DeepDuplicateFinder
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка парсинга объекта: {ex.Message}");
+                // Возвращаем объект с минимальной информацией
+                return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
             }
 
             return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
@@ -406,7 +366,8 @@ namespace DeepDuplicateFinder
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка GetAllLinkedObjects: {ex.Message}");
+                // Возвращаем пустой список в случае ошибки
+                return new List<ObjectInfo>();
             }
 
             return new List<ObjectInfo>();
@@ -486,35 +447,11 @@ namespace DeepDuplicateFinder
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка парсинга XML: {ex.Message}");
+                // Возвращаем пустой список в случае ошибки парсинга
+                return new List<ObjectInfo>();
             }
 
             return objects;
-        }
-
-        private string ReplaceInvalidChars(string filename, string replacement = "_")
-        {
-            if (string.IsNullOrEmpty(filename)) return "unknown";
-
-            var invalidChars = Path.GetInvalidFileNameChars();
-            foreach (char c in invalidChars)
-            {
-                filename = filename.Replace(c.ToString(), replacement);
-            }
-
-            if (filename.Length > 50)
-                filename = filename.Substring(0, 50);
-
-            return filename.Trim();
-        }
-
-        private class ObjectInfo
-        {
-            public int Id { get; set; }
-            public string Name { get; set; } = "";
-            public string Type { get; set; } = "";
-            public string Version { get; set; } = "";
-            public string State { get; set; } = "";
         }
     }
 }
