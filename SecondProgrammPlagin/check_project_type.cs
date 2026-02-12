@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Xml;
 using Ascon.Plm.Loodsman.PluginSDK;
+using System.IO;
+using System.Net;
 
 namespace DeepDuplicateFinder
 {
@@ -10,448 +13,424 @@ namespace DeepDuplicateFinder
     public class DeepDuplicateFinder : ILoodsmanNetPlugin
     {
         private Dictionary<int, string> _typeDictionary = new Dictionary<int, string>();
+        private const string MATERIAL_TYPE_NAME = "Материал по КД";
+        private const string DETAIL_TYPE_NAME = "Деталь";
 
-        public void PluginLoad()
-        {
-            // Логирование удалено
-        }
-
-        public void PluginUnload()
-        {
-            // Логирование удалено
-        }
-
-        public void OnConnectToDb(INetPluginCall call)
-        {
-            // Логирование удалено
-        }
-
-        public void OnCloseDb()
-        {
-            // Логирование удалено
-        }
+        public void PluginLoad() { }
+        public void PluginUnload() { }
+        public void OnConnectToDb(INetPluginCall call) { }
+        public void OnCloseDb() { }
 
         public void BindMenu(IMenuDefinition menu)
         {
-            menu.AddMenuItem("Найти дубликаты в папке", FindDuplicatesInFolder, call => true);
+            menu.AddMenuItem("Найти дубликаты материалов в деталях", FindMaterialDuplicatesInDetails, call => true);
         }
 
-        private void FindDuplicatesInFolder(INetPluginCall call)
+        private void FindMaterialDuplicatesInDetails(INetPluginCall call)
         {
             try
             {
-                // 1. Получаем выделенные ID
                 int selectedId = GetSelectedId(call);
-
                 if (selectedId == 0)
                 {
                     ShowMessage(call, "Не выбрана папка для анализа.");
                     return;
                 }
 
-                // 2. Устанавливаем XML формат для получения данных
-                try
+                try { call.RunMethod("SetFormat", new object[] { "xml" }); } catch { }
+
+                var folderInfo = GetObjectInfo(call, selectedId);
+                ShowMessage(call, $"Анализ папки: {folderInfo.Name ?? "ID " + folderInfo.Id}...");
+
+                _typeDictionary = GetTypeDictionary(call);
+
+                var materialTypeKv = _typeDictionary.FirstOrDefault(kv => kv.Value.Equals(MATERIAL_TYPE_NAME, StringComparison.OrdinalIgnoreCase));
+                int materialTypeId = materialTypeKv.Key;
+                if (materialTypeId == 0)
                 {
-                    call.RunMethod("SetFormat", new object[] { "xml" });
-                }
-                catch
-                {
-                    ShowMessage(call, "Ошибка установки XML формата.");
+                    ShowMessage(call, "Тип 'Материал по КД' не найден.");
+                    try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
                     return;
                 }
 
-                // 3. Получаем информацию о папке
-                var folderInfo = GetObjectInfo(call, selectedId);
-                ShowMessage(call, $"Анализ папки: {folderInfo.Version}...");
+                var detailTypeKv = _typeDictionary.FirstOrDefault(kv => kv.Value.Equals(DETAIL_TYPE_NAME, StringComparison.OrdinalIgnoreCase));
+                int detailTypeId = detailTypeKv.Key;
+                if (detailTypeId == 0)
+                {
+                    ShowMessage(call, "Тип 'Деталь' не найден.");
+                    try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
+                    return;
+                }
 
-                // 4. Получаем словарь типов для замены ID на названия
-                _typeDictionary = GetTypeDictionary(call);
-
-                // 5. Получаем объекты в папке
-                List<ObjectInfo> allObjects = GetObjectsInFolder(call, selectedId);
-
+                List<ObjectInfo> allObjects = GetAllObjectsRecursive(call, selectedId);
                 if (allObjects.Count == 0)
                 {
-                    // Возвращаем бинарный формат
                     try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
-                    ShowMessage(call, "В выбранной папке не найдено объектов для анализа.");
+                    ShowMessage(call, "В выбранной папке не найдено объектов.");
                     return;
                 }
 
                 ShowMessage(call, $"Найдено объектов: {allObjects.Count}. Обработка...");
 
-                // Заменяем ID типов на названия
                 foreach (var obj in allObjects)
                 {
-                    if (int.TryParse(obj.Type, out int typeId) && _typeDictionary.ContainsKey(typeId))
+                    if (int.TryParse(obj.Type, out int t) && _typeDictionary.ContainsKey(t))
+                        obj.Type = _typeDictionary[t];
+                }
+
+                var details = allObjects.Where(o => o.Type.Equals(DETAIL_TYPE_NAME, StringComparison.OrdinalIgnoreCase)).ToList();
+                ShowMessage(call, $"Найдено деталей: {details.Count}.");
+
+                if (details.Count == 0)
+                {
+                    try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
+                    return;
+                }
+
+                var detailsWithMaterialDuplicates = new List<DetailWithMaterialDuplicates>();
+                var allDebugInfo = new StringBuilder();
+                int totalMaterialsFound = 0;
+                int totalDuplicateMaterials = 0;
+                int totalDuplicateGroups = 0;
+
+                foreach (var detail in details)
+                {
+                    var materialLinks = GetMaterialLinks(call, detail.Id, materialTypeId);
+                    if (materialLinks.Count == 0) continue;
+
+                    totalMaterialsFound += materialLinks.Count;
+
+                    var detailDebug = DebugMaterialSearch(detail, materialLinks);
+                    allDebugInfo.AppendLine(detailDebug);
+
+                    var materialGroups = materialLinks
+                        .GroupBy(m => m.Name.Trim() + " | " + m.Version.Trim())
+                        .Where(g => g.Count() > 1)
+                        .ToList();
+
+                    if (materialGroups.Count > 0)
                     {
-                        obj.Type = _typeDictionary[typeId];
+                        var groupList = new List<MaterialGroup>();
+                        foreach (var g in materialGroups)
+                        {
+                            var first = g.First();
+                            var mg = new MaterialGroup
+                            {
+                                Key = g.Key,
+                                MaterialName = first.Name,
+                                MaterialType = first.Type,
+                                LinkCount = g.Count(),
+                                Materials = g.ToList()
+                            };
+                            groupList.Add(mg);
+                            totalDuplicateMaterials += g.Count() - 1;
+                            totalDuplicateGroups++;
+                        }
+                        detailsWithMaterialDuplicates.Add(new DetailWithMaterialDuplicates
+                        {
+                            Detail = detail,
+                            MaterialGroups = groupList
+                        });
                     }
                 }
 
-                // 6. Ищем дубликаты
-                // Фильтруем объекты с названиями
-                var objectsWithNames = allObjects
-                    .Where(o => !string.IsNullOrEmpty(o.Name) && o.Name != $"Объект_{o.Id}")
-                    .ToList();
-
-                int objectsWithNamesCount = objectsWithNames.Count;
-
-                // 6.1. Критические дубликаты по полному совпадению: Название + Тип + Версия
-                var fullDuplicates = objectsWithNames
-                    .Where(o => !string.IsNullOrEmpty(o.Type) && !string.IsNullOrEmpty(o.Version))
-                    .GroupBy(o => $"{o.Name.Trim().ToLower()}|{o.Type.Trim().ToLower()}|{o.Version.Trim().ToLower()}")
-                    .Where(g => g.Count() > 1)
-                    .OrderByDescending(g => g.Count())
-                    .ToList();
-
-                // 6.2. Реальные дубликаты по названию + типу (одинаковое название и тип - это ДУБЛИКАТ)
-                var nameTypeDuplicates = objectsWithNames
-                    .Where(o => !string.IsNullOrEmpty(o.Type))
-                    .GroupBy(o => $"{o.Name.Trim().ToLower()}|{o.Type.Trim().ToLower()}")
-                    .Where(g => g.Count() > 1)
-                    .OrderByDescending(g => g.Count())
-                    .ToList();
-
-                int totalRealDuplicates = fullDuplicates.Count + nameTypeDuplicates.Count;
-
-                // Возвращаем бинарный формат
                 try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
 
-                // 7. Создаем HTML отчет
-                string reportPath = CreateHtmlReport(folderInfo, allObjects.Count, objectsWithNamesCount,
-                    fullDuplicates, nameTypeDuplicates, totalRealDuplicates);
+                ShowMessage(call, "=== ОТЛАДОЧНАЯ ИНФОРМАЦИЯ ===");
+                ShowMessage(call, allDebugInfo.ToString());
 
-                // 8. Показываем сообщение пользователю
-                ShowMessage(call, $"HTML отчет создан и открыт в браузере.\nПуть: {reportPath}");
-            }
-            catch (Exception ex)
-            {
-                // Пытаемся вернуть бинарный формат в случае ошибки
-                try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
-                // Показываем сообщение об ошибке
-                ShowMessage(call, $"Ошибка при поиске дубликатов: {ex.Message}\n{ex.StackTrace}");
-            }
-        }
+                string reportPath = CreateMaterialDuplicatesHtmlReport(
+                    folderInfo, allObjects.Count, details.Count,
+                    totalMaterialsFound, totalDuplicateMaterials, detailsWithMaterialDuplicates);
 
-        private string CreateHtmlReport(ObjectInfo folderInfo,
-                                      int totalObjectsCount,
-                                      int objectsWithNamesCount,
-                                      List<IGrouping<string, ObjectInfo>> fullDuplicates,
-                                      List<IGrouping<string, ObjectInfo>> nameTypeDuplicates,
-                                      int totalRealDuplicates)
-        {
-            try
-            {
-                var htmlGenerator = new HtmlReportGenerator();
-                return htmlGenerator.CreateHtmlReport(folderInfo, totalObjectsCount, objectsWithNamesCount,
-                    fullDuplicates, nameTypeDuplicates, totalRealDuplicates);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Ошибка создания HTML отчета: {ex.Message}");
-            }
-        }
-
-        private void ShowMessage(INetPluginCall call, string message)
-        {
-            try
-            {
-                // Пробуем разные методы для показа сообщений
                 try
                 {
-                    call.RunMethod("ShowMessage", new object[] { message });
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = reportPath,
+                        UseShellExecute = true
+                    });
                 }
-                catch
+                catch { }
+
+                string finalMessage = $"Анализ завершен.\n" +
+                    $"Всего объектов: {allObjects.Count}\n" +
+                    $"Всего деталей: {details.Count}\n" +
+                    $"Найдено связей с материалами: {totalMaterialsFound}\n" +
+                    $"Всего дубликатов: {totalDuplicateMaterials}\n" +
+                    $"Групп дубликатов: {totalDuplicateGroups}\n" +
+                    $"Деталей с дубликатами: {detailsWithMaterialDuplicates.Count}\n" +
+                    $"Отчет: {reportPath}";
+
+                ShowMessage(call, finalMessage);
+            }
+            catch (Exception ex)
+            {
+                try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
+                ShowMessage(call, $"Ошибка: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private List<ObjectInfo> GetAllObjectsRecursive(INetPluginCall call, int rootId)
+        {
+            var objects = new List<ObjectInfo>();
+            var visited = new HashSet<int>();
+            var queue = new Queue<int>();
+            queue.Enqueue(rootId);
+
+            while (queue.Count > 0)
+            {
+                int id = queue.Dequeue();
+                if (visited.Contains(id)) continue;
+                visited.Add(id);
+
+                var info = GetObjectInfo(call, id);
+                if (info.Id > 0) objects.Add(info);
+
+                try
                 {
-                    try
+                    object res = call.RunMethod("GetAllLinkedObjects", new object[] { id.ToString(), 0 });
+                    if (res is string xml && !string.IsNullOrEmpty(xml))
                     {
-                        call.RunMethod("ShowErrorMessage", new object[] { message });
+                        System.Diagnostics.Debug.WriteLine($"XML for all linked in {id}: {xml}");
+                        var children = ParseLinksXml(xml);
+                        foreach (var c in children)
+                            if (!visited.Contains(c.Id))
+                                queue.Enqueue(c.Id);
                     }
-                    catch
+                }
+                catch { }
+            }
+            return objects;
+        }
+
+        private List<ObjectInfo> GetMaterialLinks(INetPluginCall call, int objectId, int materialTypeId)
+        {
+            var list = new List<ObjectInfo>();
+            try
+            {
+                object res = call.RunMethod("GetAllLinkedObjects", new object[] { objectId.ToString(), 0 });
+                if (res is string xml && !string.IsNullOrEmpty(xml))
+                {
+                    System.Diagnostics.Debug.WriteLine($"XML for all linked in {objectId}: {xml}");
+                    var all = ParseLinksXml(xml);
+                    list = all.Where(o => int.TryParse(o.Type, out int t) && t == materialTypeId).ToList();
+
+                    foreach (var o in list)
                     {
-                        try
-                        {
-                            call.RunMethod("ShowInfoMessage", new object[] { message });
-                        }
-                        catch
-                        {
-                            // Если не получается показать через API, записываем в лог
-                            System.Diagnostics.Debug.WriteLine(message);
-                        }
+                        if (int.TryParse(o.Type, out int tid) && _typeDictionary.ContainsKey(tid))
+                            o.Type = _typeDictionary[tid];
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"GetMaterialLinks error {objectId}: {ex.Message}");
+            }
+            return list;
+        }
+
+        private List<ObjectInfo> ParseLinksXml(string xmlData)
+        {
+            var list = new List<ObjectInfo>();
+            try
+            {
+                var doc = new XmlDocument();
+                doc.LoadXml(xmlData);
+                var rows = doc.SelectNodes("//row");
+                if (rows == null || rows.Count == 0) rows = doc.SelectNodes("//ROOT/rowset/row");
+                if (rows == null) return list;
+
+                foreach (XmlNode row in rows)
+                {
+                    var info = new ObjectInfo();
+                    foreach (XmlAttribute a in row.Attributes)
+                    {
+                        string n = a.Name.ToUpper();
+                        string v = a.Value;
+                        if (n == "C0" || n == "_ID_VERSION" || n == "ID_VERSION" || n == "_ID_VERSION_CHILD")
+                        {
+                            int id;
+                            if (int.TryParse(v, out id))
+                                info.Id = id;
+                        }
+                        else if (n == "C1" || n == "_TYPE")
+                            info.Type = v;
+                        else if (n == "C2" || n == "_PRODUCT" || n == "NAME" || n == "_NAME")
+                            info.Name = v;
+                        else if (n == "C3" || n == "_VERSION")
+                            info.Version = v;
+                        else if (n == "C4" || n == "_STATE")
+                            info.State = v;
+                    }
+                    if (info.Id > 0)
+                    {
+                        if (string.IsNullOrEmpty(info.Name))
+                            info.Name = $"{info.Type} {info.Version}".Trim();
+                        list.Add(info);
+                    }
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        private string DebugMaterialSearch(ObjectInfo parent, List<ObjectInfo> materials)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"=== Деталь: {parent.Name} (ID: {parent.Id}) ===");
+            sb.AppendLine($"Связей с материалами: {materials.Count}");
+            foreach (var m in materials)
+                sb.AppendLine($" - ID {m.Id}: {m.Name} ({m.Version})");
+
+            var groups = materials.GroupBy(m => m.Name.Trim() + " | " + m.Version.Trim())
+                                  .Where(g => g.Count() > 1);
+
+            sb.AppendLine("\nДубликаты:");
+            foreach (var g in groups)
+                sb.AppendLine($"   {g.Key} → {g.Count()} раз");
+
+            return sb.ToString();
+        }
+
+        private string CreateMaterialDuplicatesHtmlReport(ObjectInfo folderInfo, int totalObjects, int totalDetails,
+            int totalMaterials, int totalDups, List<DetailWithMaterialDuplicates> dups)
+        {
+            try
+            {
+                var gen = new MaterialDuplicatesHtmlReportGenerator();
+                return gen.CreateHtmlReport(folderInfo, totalObjects, totalDetails, totalMaterials, totalDups, dups, MATERIAL_TYPE_NAME);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ошибка создания отчёта: {ex.Message}");
+            }
+        }
+
+        private void ShowMessage(INetPluginCall call, string msg)
+        {
+            try { call.RunMethod("ShowMessage", new object[] { msg }); }
             catch
             {
-                // Игнорируем ошибки показа сообщений
+                try { call.RunMethod("ShowErrorMessage", new object[] { msg }); }
+                catch
+                {
+                    try { call.RunMethod("ShowInfoMessage", new object[] { msg }); }
+                    catch { System.Diagnostics.Debug.WriteLine(msg); }
+                }
             }
         }
 
         private Dictionary<int, string> GetTypeDictionary(INetPluginCall call)
         {
-            var typeDict = new Dictionary<int, string>();
-
+            var dict = new Dictionary<int, string>();
             try
             {
-                object result = call.RunMethod("GetTypeList", new object[0]);
-
-                if (result is string xmlData && !string.IsNullOrEmpty(xmlData))
+                object res = call.RunMethod("GetTypeList", new object[0]);
+                if (res is string xml && !string.IsNullOrEmpty(xml))
                 {
-                    var xmlDoc = new XmlDocument();
-                    xmlDoc.LoadXml(xmlData);
+                    var doc = new XmlDocument();
+                    doc.LoadXml(xml);
+                    var rows = doc.SelectNodes("//row");
+                    if (rows == null || rows.Count == 0) rows = doc.SelectNodes("//ROOT/rowset/row");
+                    if (rows == null) return dict;
 
-                    XmlNodeList rows = xmlDoc.SelectNodes("//row");
-                    if (rows == null || rows.Count == 0)
-                        rows = xmlDoc.SelectNodes("//ROOT/rowset/row");
-
-                    if (rows != null)
+                    foreach (XmlNode r in rows)
                     {
-                        foreach (XmlNode row in rows)
+                        int id = 0; string name = "";
+                        foreach (XmlAttribute a in r.Attributes)
                         {
-                            int typeId = 0;
-                            string typeName = "";
-
-                            foreach (XmlAttribute attr in row.Attributes)
-                            {
-                                string attrName = attr.Name.ToUpper();
-                                string attrValue = attr.Value;
-
-                                if (attrName == "C0" || attrName == "_ID" || attrName == "ID")
-                                {
-                                    if (int.TryParse(attrValue, out int id))
-                                        typeId = id;
-                                }
-                                else if (attrName == "C1" || attrName == "_TYPENAME" || attrName == "TYPENAME")
-                                {
-                                    typeName = attrValue;
-                                }
-                            }
-
-                            if (typeId > 0 && !string.IsNullOrEmpty(typeName) && !typeDict.ContainsKey(typeId))
-                            {
-                                typeDict[typeId] = typeName;
-                            }
+                            string n = a.Name.ToUpper();
+                            if (n == "C0" || n == "_ID" || n == "ID") int.TryParse(a.Value, out id);
+                            if (n == "C1" || n == "_TYPENAME" || n == "TYPENAME") name = a.Value;
                         }
+                        if (id > 0 && !string.IsNullOrEmpty(name) && !dict.ContainsKey(id))
+                            dict[id] = name;
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                // Не бросаем исключение, чтобы не прерывать работу
-                return new Dictionary<int, string>();
-            }
-
-            return typeDict;
+            catch { }
+            return dict;
         }
 
         private int GetSelectedId(INetPluginCall call)
         {
             try
             {
-                object result = call.RunMethod("CGetTreeSelectedIDs", new object[0]);
-                if (result is string idsStr && !string.IsNullOrEmpty(idsStr))
+                object res = call.RunMethod("CGetTreeSelectedIDs", new object[0]);
+                if (res is string s && !string.IsNullOrEmpty(s))
                 {
-                    string[] ids = idsStr.Split(',');
+                    var ids = s.Split(',');
                     if (ids.Length > 0 && int.TryParse(ids[0].Trim(), out int id) && id > 0)
-                    {
                         return id;
-                    }
                 }
             }
-            catch (Exception ex)
-            {
-                throw new Exception($"Ошибка получения выделенных ID: {ex.Message}");
-            }
-
+            catch { }
             return 0;
         }
 
-        private ObjectInfo GetObjectInfo(INetPluginCall call, int objectId)
+        private ObjectInfo GetObjectInfo(INetPluginCall call, int id)
         {
             try
             {
-                object result = call.RunMethod("GetPropObjects", new object[]
-                {
-                    objectId.ToString(),  // stObjectList
-                    0                     // inParams
-                });
-
-                if (result is string xmlData && !string.IsNullOrEmpty(xmlData))
-                {
-                    return ParseObjectInfoXml(xmlData, objectId);
-                }
+                object res = call.RunMethod("GetPropObjects", new object[] { id.ToString(), 0 });
+                if (res is string xml && !string.IsNullOrEmpty(xml))
+                    return ParseObjectInfoXml(xml, id);
             }
-            catch (Exception ex)
-            {
-                // Возвращаем объект с минимальной информацией
-                return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
-            }
-
-            return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
+            catch { }
+            return new ObjectInfo { Id = id, Name = $"Объект_{id}" };
         }
 
-        private ObjectInfo ParseObjectInfoXml(string xmlData, int objectId)
+        private ObjectInfo ParseObjectInfoXml(string xml, int id)
         {
             try
             {
-                var xmlDoc = new XmlDocument();
-                xmlDoc.LoadXml(xmlData);
-
-                var row = xmlDoc.SelectSingleNode("//row");
-                if (row == null)
-                    row = xmlDoc.SelectSingleNode("//ROOT/rowset/row");
-
+                var doc = new XmlDocument();
+                doc.LoadXml(xml);
+                var row = doc.SelectSingleNode("//row") ?? doc.SelectSingleNode("//ROOT/rowset/row");
                 if (row != null)
                 {
-                    var info = new ObjectInfo { Id = objectId };
-
-                    foreach (XmlAttribute attr in row.Attributes)
+                    var info = new ObjectInfo { Id = id };
+                    foreach (XmlAttribute a in row.Attributes)
                     {
-                        string attrName = attr.Name.ToUpper();
-                        string attrValue = attr.Value;
-
-                        if (attrName == "C1" || attrName == "_TYPE")
-                        {
-                            info.Type = attrValue;
-                        }
-                        else if (attrName == "C2" || attrName == "_PRODUCT")
-                        {
-                            info.Name = attrValue;
-                        }
-                        else if (attrName == "C3" || attrName == "_VERSION")
-                        {
-                            info.Version = attrValue;
-                        }
-                        else if (attrName == "C4" || attrName == "_STATE")
-                        {
-                            info.State = attrValue;
-                        }
+                        string n = a.Name.ToUpper();
+                        string v = a.Value;
+                        if (n == "C1" || n == "_TYPE") info.Type = v;
+                        if (n == "C2" || n == "_PRODUCT") info.Name = v;
+                        if (n == "C3" || n == "_VERSION") info.Version = v;
+                        if (n == "C4" || n == "_STATE") info.State = v;
                     }
-
                     if (string.IsNullOrEmpty(info.Name))
-                    {
-                        info.Name = !string.IsNullOrEmpty(info.Type)
-                            ? $"{info.Type} {info.Version}".Trim()
-                            : $"Объект_{objectId}";
-                    }
-
+                        info.Name = $"{info.Type} {info.Version}".Trim();
                     return info;
                 }
             }
-            catch (Exception ex)
-            {
-                // Возвращаем объект с минимальной информацией
-                return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
-            }
-
-            return new ObjectInfo { Id = objectId, Name = $"Объект_{objectId}" };
+            catch { }
+            return new ObjectInfo { Id = id, Name = $"Объект_{id}" };
         }
+    }
 
-        private List<ObjectInfo> GetObjectsInFolder(INetPluginCall call, int folderId)
-        {
-            try
-            {
-                // Метод поиска
-                object result = call.RunMethod("GetAllLinkedObjects", new object[]
-                {
-                    folderId.ToString(),  // stIds
-                    0                     // inParams
-                });
+    public class DetailWithMaterialDuplicates
+    {
+        public ObjectInfo Detail { get; set; }
+        public List<MaterialGroup> MaterialGroups { get; set; }
+    }
 
-                if (result is string xmlData && !string.IsNullOrEmpty(xmlData))
-                {
-                    return ParseTreeXml(xmlData);
-                }
-            }
-            catch (Exception ex)
-            {
-                // Возвращаем пустой список в случае ошибки
-                return new List<ObjectInfo>();
-            }
+    public class MaterialGroup
+    {
+        public string Key { get; set; }
+        public string MaterialName { get; set; } = "";
+        public string MaterialType { get; set; } = "";
+        public int LinkCount { get; set; }
+        public List<ObjectInfo> Materials { get; set; } = new List<ObjectInfo>();
+    }
 
-            return new List<ObjectInfo>();
-        }
-
-        private List<ObjectInfo> ParseTreeXml(string xmlData)
-        {
-            var objects = new List<ObjectInfo>();
-
-            try
-            {
-                if (string.IsNullOrEmpty(xmlData))
-                    return objects;
-
-                var xmlDoc = new XmlDocument();
-                xmlDoc.LoadXml(xmlData);
-
-                // Пробуем разные пути к данным
-                XmlNodeList rows = xmlDoc.SelectNodes("//row");
-                if (rows == null || rows.Count == 0)
-                    rows = xmlDoc.SelectNodes("//ROOT/rowset/row");
-
-                if (rows != null && rows.Count > 0)
-                {
-                    foreach (XmlNode row in rows)
-                    {
-                        var info = new ObjectInfo();
-
-                        foreach (XmlAttribute attr in row.Attributes)
-                        {
-                            string attrName = attr.Name.ToUpper();
-                            string attrValue = attr.Value;
-
-                            // Парсим ID
-                            if (attrName == "C0" || attrName == "_ID_VERSION" || attrName == "ID" ||
-                                attrName == "_ID" || attrName == "ID_VERSION" || attrName == "_ID_VERSION")
-                            {
-                                if (int.TryParse(attrValue, out int id))
-                                    info.Id = id;
-                            }
-                            // Парсим Тип
-                            else if (attrName == "C1" || attrName == "_TYPE" || attrName == "TYPE")
-                            {
-                                info.Type = attrValue;
-                            }
-                            // Парсим Название/Продукт
-                            else if (attrName == "C2" || attrName == "C3" || attrName == "_PRODUCT" ||
-                                     attrName == "NAME" || attrName == "_NAME" || attrName == "PRODUCT")
-                            {
-                                info.Name = attrValue;
-                            }
-                            // Парсим Версию
-                            else if (attrName == "C4" || attrName == "_VERSION" || attrName == "VERSION")
-                            {
-                                info.Version = attrValue;
-                            }
-                            // Парсим Состояние
-                            else if (attrName == "C5" || attrName == "_STATE" || attrName == "STATE")
-                            {
-                                info.State = attrValue;
-                            }
-                        }
-
-                        if (info.Id > 0)
-                        {
-                            // Если имя пустое, создаем из типа и версии
-                            if (string.IsNullOrEmpty(info.Name))
-                            {
-                                info.Name = !string.IsNullOrEmpty(info.Type)
-                                    ? $"{info.Type} {info.Version}".Trim()
-                                    : $"Объект_{info.Id}";
-                            }
-                            objects.Add(info);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                // Возвращаем пустой список в случае ошибки парсинга
-                return new List<ObjectInfo>();
-            }
-
-            return objects;
-        }
+    public class ObjectInfo
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Version { get; set; } = "";
+        public string State { get; set; } = "";
     }
 }
