@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
@@ -167,9 +167,9 @@ namespace DeepDuplicateFinder
                 sb.AppendLine(" </div>");
                 // ИНФОРМАЦИЯ О ПАПКЕ
                 sb.AppendLine(" <div class='info-section'>");
-                sb.AppendLine(" <div class='info-item'><span class='info-label'>📁 Папка:</span> " + EscapeHtml(folderInfo.Name) + "</div>");
+                sb.AppendLine(" <div class='info-item'><span class='info-label'>📁 Папка:</span> " + EscapeHtml(folderInfo.Version + " " + folderInfo.Type) + "</div>");
                 sb.AppendLine(" <div class='info-item'><span class='info-label'>🆔 ID папки:</span> " + folderInfo.Id + "</div>");
-                sb.AppendLine(" <div class='info-item'><span class='info-label'>🔍 Тип материалов:</span> " + EscapeHtml(materialTypeName) + "</div>");
+                sb.AppendLine(" <div class='info-item'><span class='info-label'>🔍 </span> " + EscapeHtml(materialTypeName) + "</div>");
                 sb.AppendLine(" <div class='info-item'><span class='info-label'>📝 Пояснение:</span> Ищем дубликаты материалов ВНУТРИ объектов (не путать с одинаковыми материалами в разных объектах)</div>");
                 sb.AppendLine(" </div>");
                 // СТАТИСТИКА
