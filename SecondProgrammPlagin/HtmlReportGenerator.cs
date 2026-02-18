@@ -186,10 +186,6 @@ namespace DeepDuplicateFinder
                 sb.AppendLine($" <div class='stat-number'>{totalMaterialsFound}</div>");
                 sb.AppendLine(" <div class='stat-label'>Всего связей с материалами</div>");
                 sb.AppendLine(" </div>");
-                sb.AppendLine(" <div class='stat-card duplicates'>");
-                sb.AppendLine($" <div class='stat-number'>{totalDuplicateMaterials}</div>");
-                sb.AppendLine(" <div class='stat-label'>Всего дубликатов материалов</div>");
-                sb.AppendLine(" </div>");
                 sb.AppendLine(" <div class='stat-card with-duplicates'>");
                 sb.AppendLine($" <div class='stat-number'>{detailsWithDuplicates.Count}</div>");
                 sb.AppendLine(" <div class='stat-label'>Деталей с дубликатами</div>");
@@ -284,6 +280,12 @@ namespace DeepDuplicateFinder
                 throw new Exception($"Ошибка сохранения HTML отчета: {ex.Message}");
             }
         }
+
+        internal string CreateHtmlReport(ObjectInfo folderInfo, int totalObjects, int totalDetails, int totalMaterials, int totalDups, List<DetailWithMultipleMaterials> dups, string mATERIAL_TYPE_NAME)
+        {
+            throw new NotImplementedException();
+        }
+
         private string EscapeHtml(string text)
         {
             if (string.IsNullOrEmpty(text))

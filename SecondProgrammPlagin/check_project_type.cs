@@ -1,43 +1,44 @@
 ﻿using Ascon.Plm.Loodsman.PluginSDK;
-using DocumentFormat.OpenXml.VariantTypes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Xml;
+using System.Runtime.InteropServices;
+using System.Windows;
 
 namespace DeepDuplicateFinder
 {
     [LoodsmanPlugin]
     public class DeepDuplicateFinder : ILoodsmanNetPlugin
     {
+        //Для MessageBox, но круче
+        [DllImport("User32.dll", CharSet = CharSet.Unicode)]
+        public static extern int MessageBox(IntPtr h, string m, string c, int type);
+
+
         private Dictionary<int, string> _typeDictionary = new Dictionary<int, string>();
+
+        //Костанты
         private const string MATERIAL_TYPE_NAME = "Материал по КД";
         private const string DETAIL_TYPE_NAME = "Деталь";
+        private const string MATERIAL_MAIN_TYPE_NAME = "Материал основной";
+        private const string PREPARATION_TYPE_NAME = "Заготовки";
 
         public void PluginLoad() 
-        { 
-        
-        }
-        public void PluginUnload() 
-        { 
-
-        }
-        public void OnConnectToDb(INetPluginCall call) 
-        { 
-        
-        }
-        public void OnCloseDb() 
         {
-        
+            MessageBox((IntPtr)0, "Плагин успешно загружен", "DeepDuplicateFinder", 0);
         }
+        public void PluginUnload() { }
+        public void OnConnectToDb(INetPluginCall call) { }
+        public void OnCloseDb() { }
 
         public void BindMenu(IMenuDefinition menu)
         {
-            menu.AddMenuItem("Найти дубликаты материалов в деталях (Материал по КД)", FindMaterialDuplicatesInDetails, call => true);
+            menu.AddMenuItem("Найти дубликаты материалов в деталях и заготовках (АВО)", FindMaterialDuplicatesInDetails, call => true);
         }
 
-        //Метод поиска дубликтов
+        //Метод поиска деталей с несколькими материалами
         private void FindMaterialDuplicatesInDetails(INetPluginCall call)
         {
             try
@@ -46,54 +47,49 @@ namespace DeepDuplicateFinder
 
                 if (selectedId == 0)
                 {
-                    Console.Write(Convert.ToString(call), "Не выбрана папка для анализа.");
+                    MessageBox((IntPtr)0, $"{Convert.ToString(call)} \n Не выбрана папка для анализа.", "DeepDuplicateFinder", 0);
                     return;
                 }
 
-                try 
-                { 
-                    call.RunMethod("SetFormat", new object[] { "xml" }); 
-                } 
-                catch 
-                { 
-
+                try
+                {
+                    call.RunMethod("SetFormat", new object[] { "xml" });
                 }
+                catch { }
 
                 var folderInfo = GetObjectInfo(call, selectedId);
 
-                //-------Отладочная информация-------
-                Console.Write(Convert.ToString(call), $"Анализ папки: {folderInfo.Name ?? "ID " + folderInfo.Id}...");
+                //Отладка в консоле
+                Console.WriteLine(Convert.ToString(call), $"Анализ папки: {folderInfo.Name} (ID: {folderInfo.Id})");
 
                 _typeDictionary = GetTypeDictionary(call);
-
-                //Материал
-                var materialTypeName = _typeDictionary.FirstOrDefault(kv => kv.Value.Equals(MATERIAL_TYPE_NAME, StringComparison.OrdinalIgnoreCase));
-                int materialTypeId = materialTypeName.Key;
-                if (materialTypeId == 0)
-                {
-                    Console.WriteLine(Convert.ToString(call), "Тип 'Материал по КД' не найден.");
-                    
-                    try 
-                    { 
-                        call.RunMethod("SetFormat", new object[] { "" }); 
-                    } 
-                    catch 
-                    { 
-                    
-                    }
-
-                    return;
-                }
 
                 //Деталь
                 var detailTypeKv = _typeDictionary.FirstOrDefault(kv => kv.Value.Equals(DETAIL_TYPE_NAME, StringComparison.OrdinalIgnoreCase));
                 int detailTypeId = detailTypeKv.Key;
                 if (detailTypeId == 0)
                 {
-                    Console.WriteLine(Convert.ToString(call), "Тип 'Деталь' не найден.");
+                    MessageBox((IntPtr)0, $"{Convert.ToString(call)} \n Тип 'Деталь' не найден.", "DeepDuplicateFinder", 0);
                     try 
                     { 
-                        call.RunMethod("SetFormat", new object[] {" "}); 
+                        call.RunMethod("SetFormat", new object[] { " " }); 
+                    } 
+                    catch 
+                    { 
+
+                    }
+                    return;
+                }
+
+                //Материал
+                var materialTypeName = _typeDictionary.FirstOrDefault(kv => kv.Value.Equals(MATERIAL_TYPE_NAME, StringComparison.OrdinalIgnoreCase));
+                int materialTypeId = materialTypeName.Key;
+                if (materialTypeId == 0)
+                {
+                    MessageBox((IntPtr)0, $"{Convert.ToString(call)} \n Тип 'Материал по КД' не найден.", "DeepDuplicateFinder", 0);
+                    try 
+                    { 
+                        call.RunMethod("SetFormat", new object[] { "" }); 
                     } 
                     catch 
                     { 
@@ -105,6 +101,7 @@ namespace DeepDuplicateFinder
                 List<ObjectInfo> allObjects = GetAllObjectsRecursive(call, selectedId);
                 if (allObjects.Count == 0)
                 {
+                    MessageBox((IntPtr)0, $"{Convert.ToString(call)} \n В папке не найдено объектов.", "DeepDuplicateFinder", 0);
                     try 
                     { 
                         call.RunMethod("SetFormat", new object[] { "" }); 
@@ -113,102 +110,101 @@ namespace DeepDuplicateFinder
                     { 
                     
                     }
-                    Console.WriteLine(Convert.ToString(call), "В выбранной папке не найдено объектов.");
                     return;
                 }
 
-                //-------Отладочная информация-------
-                Console.WriteLine(Convert.ToString(call), $"Найдено объектов: {allObjects.Count}. Обработка...");
-
+                //Заменяем ID типов на имена
                 foreach (var obj in allObjects)
                 {
                     if (int.TryParse(obj.Type, out int t) && _typeDictionary.ContainsKey(t))
+                    {
                         obj.Type = _typeDictionary[t];
+                    }
                 }
 
                 var details = allObjects.Where(o => o.Type.Equals(DETAIL_TYPE_NAME, StringComparison.OrdinalIgnoreCase)).ToList();
-
-                //-------Отладочная информация-------
-                Console.WriteLine(Convert.ToString(call), $"Найдено деталей: {details.Count}.");
+                Console.WriteLine(Convert.ToString(call), $"Найдено деталей: {details.Count}");
 
                 if (details.Count == 0)
                 {
+                    MessageBox((IntPtr)0, $"{Convert.ToString(call)} \n Детали не найдены.", "DeepDuplicateFinder", 0);
                     try 
                     { 
                         call.RunMethod("SetFormat", new object[] { "" }); 
                     } 
                     catch 
                     { 
-                    
+                        
                     }
                     return;
                 }
 
-                var detailsWithMaterialDuplicates = new List<DetailWithMaterialDuplicates>();
+                //Список деталей с проблемами (материалов > 1)
+                var detailsWithMultipleMaterials = new List<DetailWithMultipleMaterials>();
                 var allDebugInfo = new StringBuilder();
                 int totalMaterialsFound = 0;
-                int totalDuplicateMaterials = 0;
-                int totalDuplicateGroups = 0;
+                int totalDetailsWithMultipleMaterials = 0;
 
                 foreach (var detail in details)
                 {
                     var materialLinks = GetMaterialLinks(call, detail.Id, materialTypeId);
-                    if (materialLinks.Count == 0) 
+
+                    if (materialLinks.Count > 0)
                     {
-                        continue;
-                    }
+                        totalMaterialsFound += materialLinks.Count;
 
-                    totalMaterialsFound += materialLinks.Count;
+                        var detailDebug = DebugMaterialSearch(detail, materialLinks);
+                        allDebugInfo.AppendLine(detailDebug);
 
-                    var detailDebug = DebugMaterialSearch(detail, materialLinks);
-                    allDebugInfo.AppendLine(detailDebug);
-
-                    var materialGroups = materialLinks
-                        .GroupBy(m => $"{m.Name} | {m.Version}")
-                        .Where(g => g.Count() > 1)
-                        .ToList();
-
-                    if (materialGroups.Count > 0)
-                    {
-                        var groupList = new List<MaterialGroup>();
-                        foreach (var g in materialGroups)
+                        //Если материалов больше 1 - добавляем в список проблемных
+                        if (materialLinks.Count > 1)
                         {
-                            var first = g.First();
-                            var mg = new MaterialGroup
+                            //Группируем материалы для удобства отображения
+                            var materialGroups = materialLinks
+                                .GroupBy(m => $"{m.Name} | {m.Version}")
+                                .Select(g => new MaterialGroup
+                                {
+                                    Key = g.Key,
+                                    MaterialName = g.First().Name,
+                                    MaterialVersion = g.First().Version,
+                                    LinkCount = g.Count(),
+                                    Materials = g.ToList()
+                                })
+                                .ToList();
+
+                            detailsWithMultipleMaterials.Add(new DetailWithMultipleMaterials
                             {
-                                Key = g.Key,
-                                MaterialName = first.Name,
-                                MaterialVersion = first.Version,
-                                LinkCount = g.Count(),
-                                Materials = g.ToList()
-                            };
-                            groupList.Add(mg);
-                            totalDuplicateMaterials += g.Count() - 1;
-                            totalDuplicateGroups++;
+                                Detail = detail,
+                                Materials = materialLinks,
+                                MaterialGroups = materialGroups,
+                                TotalMaterials = materialLinks.Count
+                            });
+
+                            totalDetailsWithMultipleMaterials++;
                         }
-                        detailsWithMaterialDuplicates.Add(new DetailWithMaterialDuplicates
-                        {
-                            Detail = detail,
-                            MaterialGroups = groupList
-                        });
                     }
                 }
 
-                try 
-                { 
-                    call.RunMethod("SetFormat", new object[] { "" }); 
-                } 
-                catch 
-                { 
-                
+                try
+                {
+                    call.RunMethod("SetFormat", new object[] { "" });
                 }
+                catch { }
 
-                //-------Отладочная информация-------
+                //--------------------------Отладка--------------------------
+                //Выводим отладочную информацию
                 Console.WriteLine(Convert.ToString(call), "--------------------------Отладка--------------------------");
                 Console.WriteLine(Convert.ToString(call), allDebugInfo.ToString());
 
-                string reportPath = CreateMaterialDuplicatesHtmlReport(folderInfo, allObjects.Count, details.Count, totalMaterialsFound, totalDuplicateMaterials, detailsWithMaterialDuplicates);
+                //Создание отчета - ВЫЗОВ МЕТОДА (не объявление!)
+                string reportPath = CreateMaterialReport(
+                    folderInfo,
+                    allObjects.Count,
+                    details.Count,
+                    totalMaterialsFound,
+                    detailsWithMultipleMaterials);
 
+                //Открываем отчет
                 try
                 {
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -217,34 +213,50 @@ namespace DeepDuplicateFinder
                         UseShellExecute = true
                     });
                 }
-                catch 
-                { 
+                catch { }
+
+                string finalMessage = $"Всего объектов: {allObjects.Count}\n" + $"Всего деталей: {details.Count}\n" + $"Найдено связей с материалами: {totalMaterialsFound}\n" + $"Деталей с несколькими материалами (>1): {totalDetailsWithMultipleMaterials}\n" + $"Отчет: {reportPath}";
                 
-                }
-
-                string finalMessage = $"Всего объектов: {allObjects.Count}\n" +
-                    $"Всего деталей: {details.Count}\n" +
-                    $"Найдено связей с материалами: {totalMaterialsFound}\n" +
-                    $"Всего дубликатов: {totalDuplicateMaterials}\n" +
-                    $"Групп дубликатов: {totalDuplicateGroups}\n" +
-                    $"Деталей с дубликатами: {detailsWithMaterialDuplicates.Count}\n" +
-                    $"Отчет: {reportPath}";
-
-                Console.WriteLine(Convert.ToString(call), finalMessage);
+                MessageBox((IntPtr)0, $"{Convert.ToString(call)} \n Ошибка: {finalMessage}", "DeepDuplicateFinder", 0);
             }
             catch (Exception ex)
             {
+                MessageBox((IntPtr)0, $"{Convert.ToString(call)} \n Ошибка: {ex.Message}", "DeepDuplicateFinder", 0);
                 try 
                 { 
-                    call.RunMethod("SetFormat", new object[] { "" }); 
+                    call.RunMethod("SetFormat", new object[] { "" });
                 } 
                 catch 
                 { 
-                
+                    
                 }
+            }
+        }
 
-                //-------Отладочная информация-------
-                Console.WriteLine(Convert.ToString(call), $"Ошибка: {ex.Message}\n{ex.StackTrace}");
+        //Создание отчета
+        private string CreateMaterialReport(
+            ObjectInfo folderInfo,
+            int totalObjects,
+            int totalDetails,
+            int totalMaterials,
+            List<DetailWithMultipleMaterials> problemDetails)
+        {
+            try
+            {
+                var gen = new MaterialDuplicatesHtmlReportGenerator();
+
+                // Преобразуем List<DetailWithMultipleMaterials> в List<DetailWithMaterialDuplicates>
+                var oldFormatList = problemDetails.Select(p => new DetailWithMaterialDuplicates
+                {
+                    Detail = p.Detail,
+                    MaterialGroups = p.MaterialGroups
+                }).ToList();
+
+                return gen.CreateHtmlReport(folderInfo, totalObjects, totalDetails, totalMaterials, 0, oldFormatList, MATERIAL_TYPE_NAME);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ошибка создания отчёта: {ex.Message}");
             }
         }
 
@@ -268,11 +280,9 @@ namespace DeepDuplicateFinder
                 try
                 {
                     //Новый метод для получения дочерних объектов
-                    object res = call.RunMethod("GetLinkedObjectsForObjects", new object[] 
+                    object res = call.RunMethod("GetLinkedObjectsForObjects", new object[]
                     {
-                        id.ToString(),
-                        "",
-                        false
+                        id.ToString(), "", false
                     });
 
                     if (res is string xml && !string.IsNullOrEmpty(xml))
@@ -281,15 +291,13 @@ namespace DeepDuplicateFinder
                         foreach (var c in children)
                         {
                             if (!visited.Contains(c.ChildId))
+                            {
                                 queue.Enqueue(c.ChildId);
+                            }
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    //-------Отладочная информация-------
-                    System.Diagnostics.Debug.WriteLine($"Error getting children for {id}: {ex.Message}");
-                }
+                catch (Exception ex) { }
             }
             return objects;
         }
@@ -299,30 +307,19 @@ namespace DeepDuplicateFinder
             var list = new List<ObjectInfo>();
             try
             {
-                //GetLinkedObjectsForObjects для получения связанных объектов
-                object res = call.RunMethod("GetLinkedObjectsForObjects", new object[] 
+                object res = call.RunMethod("GetLinkedObjectsForObjects", new object[]
                 {
-                    versionId.ToString(),
-                    "",
-                    false
+                    versionId.ToString(), "", false
                 });
 
                 if (res is string xml && !string.IsNullOrEmpty(xml))
                 {
-                    System.Diagnostics.Debug.WriteLine($"GetLinkedObjectsForObjects XML for version {versionId}: {xml}");
-
-                    //Парсинг результата
                     var linkedObjects = ParseLinkedObjectsXml(xml);
 
                     System.Diagnostics.Debug.WriteLine($"Всего связанных объектов: {linkedObjects.Count}");
 
-                    //Фильтрация по типу материала
                     var materialLinks = linkedObjects.Where(o => o.TypeId == materialTypeId).ToList();
 
-                    //-------Отладочная информация-------
-                    System.Diagnostics.Debug.WriteLine($"Найдено материалов по TypeId={materialTypeId}: {materialLinks.Count}");
-
-                    //Преобразование в ObjectInfo
                     list = materialLinks.Select(o => new ObjectInfo
                     {
                         Id = o.ChildId,
@@ -334,27 +331,18 @@ namespace DeepDuplicateFinder
                         ParentId = o.ParentId
                     }).ToList();
 
-                    //Замена ID типа на имя для удобства
                     foreach (var o in list)
                     {
                         if (int.TryParse(o.Type, out int tid) && _typeDictionary.ContainsKey(tid))
                         {
                             o.Type = _typeDictionary[tid];
                         }
-                        
-                        //-------Отладочная информация-------
-                        System.Diagnostics.Debug.WriteLine($"  -> Материал: {o.Name} (Версия: {o.Version}), Type={o.Type}, LinkId={o.LinkId}");
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                //-------Отладочная информация-------
-                System.Diagnostics.Debug.WriteLine($"GetMaterialLinks error for version {versionId}: {ex.Message}");
-            }
+            catch { }
             return list;
         }
-
 
         private List<LinkedObjectInfo> ParseLinkedObjectsXml(string xmlData)
         {
@@ -369,105 +357,52 @@ namespace DeepDuplicateFinder
                 {
                     rows = doc.SelectNodes("//ROOT/rowset/row");
                 }
-                
-                if (rows == null || rows.Count == 0)
-                {
-                    rows = doc.SelectNodes("//data/row");
-                }
 
                 if (rows == null)
                 {
-                    System.Diagnostics.Debug.WriteLine("ParseLinkedObjectsXml: rows not found");
+                    MessageBox((IntPtr)0, "ParseLinkedObjectsXml выдал ошибку: \n строки не найдены", "DeepDuplicateFinder", 0);
                     return list;
                 }
-
-                //-------Отладочная информация-------
-                System.Diagnostics.Debug.WriteLine($"ParseLinkedObjectsXml: найдено {rows.Count} строк");
 
                 foreach (XmlNode row in rows)
                 {
                     var info = new LinkedObjectInfo();
                     int tempInt;
 
-                    //Получение значения по индексам
                     foreach (XmlAttribute attr in row.Attributes)
                     {
-                        string name = attr.Name; //Тут "c0", "c1", "c2"
+                        string name = attr.Name;
                         string value = attr.Value;
 
-                        //Парсинг по индексам
                         switch (name)
                         {
-                            case "c0": //_ID_LINK
-                                if (int.TryParse(value, out tempInt))
-                                    info.LinkId = tempInt;
-                                break;
-
-                            case "c1": //_ID_PARENT
-                                if (int.TryParse(value, out tempInt))
-                                    info.ParentId = tempInt;
-                                break;
-
-                            case "c2": //_ID_CHILD
-                                if (int.TryParse(value, out tempInt))
-                                    info.ChildId = tempInt;
-                                break;
-
-                            case "c3": //_ID_LINK_TYPE
-                                if (int.TryParse(value, out tempInt))
-                                    info.LinkTypeId = tempInt;
-                                break;
-
-                            case "c4": //_LINK_TYPE_NAME
-                                info.LinkTypeName = value;
-                                break;
-
-                            case "c5": //_ID_TYPE
-                                if (int.TryParse(value, out tempInt))
-                                    info.TypeId = tempInt;
-                                break;
-
-                            case "c6": //_PRODUCT
-                                info.Product = value;
-                                break;
-
-                            case "c7": //_VERSION
-                                info.Version = value;
-                                break;
-
-                            case "c8": //_ID_STATE
-                                if (int.TryParse(value, out tempInt))
-                                    info.StateId = tempInt;
-                                break;
-
-                            case "c14": //_ID_LOCK
-                                if (int.TryParse(value, out tempInt))
-                                    info.LockId = tempInt;
-                                break;
+                            case "c0": if (int.TryParse(value, out tempInt)) info.LinkId = tempInt; break;
+                            case "c1": if (int.TryParse(value, out tempInt)) info.ParentId = tempInt; break;
+                            case "c2": if (int.TryParse(value, out tempInt)) info.ChildId = tempInt; break;
+                            case "c3": if (int.TryParse(value, out tempInt)) info.LinkTypeId = tempInt; break;
+                            case "c4": info.LinkTypeName = value; break;
+                            case "c5": if (int.TryParse(value, out tempInt)) info.TypeId = tempInt; break;
+                            case "c6": info.Product = value; break;
+                            case "c7": info.Version = value; break;
+                            case "c8": if (int.TryParse(value, out tempInt)) info.StateId = tempInt; break;
+                            case "c14": if (int.TryParse(value, out tempInt)) info.LockId = tempInt; break;
                         }
                     }
-
-                    //-------Отладочная информация-------
-                    System.Diagnostics.Debug.WriteLine($"Распарсено: LinkId={info.LinkId}, ParentId={info.ParentId}, ChildId={info.ChildId}, TypeId={info.TypeId}, Product={info.Product}");
 
                     if (info.ChildId > 0)
                     {
                         list.Add(info);
                     }
                 }
-
-                System.Diagnostics.Debug.WriteLine($"ParseLinkedObjectsXml: успешно распарсено {list.Count} объектов");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ParseLinkedObjectsXml error: {ex.Message}");
+                MessageBox((IntPtr)0, $"ParseLinkedObjectsXml выдал ошибку: \n {ex.Message}", "DeepDuplicateFinder", 0);
             }
             return list;
         }
 
-
-
-        //Метод для отладки поиска материалов в деталях
+        //Метод для отладки поиска материалов в деталях (удалить)
         private string DebugMaterialSearch(ObjectInfo parent, List<ObjectInfo> materials)
         {
             var sb = new StringBuilder();
@@ -479,40 +414,25 @@ namespace DeepDuplicateFinder
                 sb.AppendLine($" - ID {m.Id}: {m.Name} (Версия: {m.Version}), Type={m.Type}, LinkId={m.LinkId}");
             }
 
-            //Группируем по имени и версии (без ID)
             var groups = materials.GroupBy(m => new { m.Name, m.Version }).Where(g => g.Count() > 1).ToList();
 
-            sb.AppendLine($"\nДубликаты (найдено групп: {groups.Count}):");
+            sb.AppendLine($"\n Дубликаты (найдено групп: {groups.Count}):");
 
             foreach (var g in groups)
             {
                 sb.AppendLine($"  {g.Key.Name} (Версия: {g.Key.Version}) → используется {g.Count()} раз(а)");
                 foreach (var m in g)
                 {
-                    sb.AppendLine($"    - LinkId: {m.LinkId}, ID материала: {m.Id}");
+                    sb.AppendLine($"LinkId: {m.LinkId}, ID материала: {m.Id}");
                 }
             }
 
             if (groups.Count == 0)
             {
-                sb.AppendLine("  Дубликатов не найдено");
+                sb.AppendLine("Дубликатов не найдено");
             }
 
             return sb.ToString();
-        }
-
-        //Создание дубликатов материалов в HTML
-        private string CreateMaterialDuplicatesHtmlReport(ObjectInfo folderInfo, int totalObjects, int totalDetails, int totalMaterials, int totalDups, List<DetailWithMaterialDuplicates> dups)
-        {
-            try
-            {
-                var gen = new MaterialDuplicatesHtmlReportGenerator();
-                return gen.CreateHtmlReport(folderInfo, totalObjects, totalDetails, totalMaterials, totalDups, dups, MATERIAL_TYPE_NAME);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Ошибка создания отчёта: {ex.Message}");
-            }
         }
 
         private Dictionary<int, string> GetTypeDictionary(INetPluginCall call)
@@ -528,15 +448,10 @@ namespace DeepDuplicateFinder
                     doc.LoadXml(xml);
                     var rows = doc.SelectNodes("//row");
 
-                    if (rows == null || rows.Count == 0) rows = doc.SelectNodes("//ROOT/rowset/row");
-                    {
+                    if (rows == null || rows.Count == 0)
+                        rows = doc.SelectNodes("//ROOT/rowset/row");
 
-                    }
-
-                    if (rows == null)
-                    {
-                        return dict;
-                    }
+                    if (rows == null) return dict;
 
                     foreach (XmlNode r in rows)
                     {
@@ -544,14 +459,10 @@ namespace DeepDuplicateFinder
                         foreach (XmlAttribute a in r.Attributes)
                         {
                             string n = a.Name.ToUpper();
-                            if (n == "C0" || n == "_ID" || n == "ID") int.TryParse(a.Value, out id);
-                            {
-
-                            }
-                            if (n == "C1" || n == "_NAME" || n == "NAME") name = a.Value;
-                            {
-
-                            }
+                            if (n == "C0" || n == "_ID" || n == "ID")
+                                int.TryParse(a.Value, out id);
+                            if (n == "C1" || n == "_NAME" || n == "NAME")
+                                name = a.Value;
                         }
                         if (id > 0 && !string.IsNullOrEmpty(name) && !dict.ContainsKey(id))
                         {
@@ -561,8 +472,8 @@ namespace DeepDuplicateFinder
                 }
             }
             catch 
-            {
-                return dict;
+            { 
+            
             }
             return dict;
         }
@@ -575,30 +486,25 @@ namespace DeepDuplicateFinder
 
                 if (res is string s && !string.IsNullOrEmpty(s))
                 {
-                    System.Diagnostics.Debug.WriteLine($"CGetTreeSelectedIDs возвращает: {s}");
-
-                    // Разбираем строку с ID (формат: "id1,id2,id3") если бы помогло
                     var ids = s.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
 
                     if (ids.Length > 0)
                     {
-                        // Берем первый ID
                         string firstId = ids[0].Trim();
                         if (int.TryParse(firstId, out int id) && id > 0)
                         {
-                            System.Diagnostics.Debug.WriteLine($"ID: {id}");
                             return id;
                         }
                     }
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("CGetTreeSelectedIDs Возвращает пустой или нестроковый результат.");
+                    MessageBox((IntPtr)0, $"CGetTreeSelectedIDs выдал ошибку: \n озвращает пустой или нестроковый результат.", "DeepDuplicateFinder", 0);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Ошибка в GetSelectedId: {ex.Message}");
+                MessageBox((IntPtr)0, $"Ошибка в GetSelectedId: \n {ex.Message}", "DeepDuplicateFinder", 0);
             }
             return 0;
         }
@@ -613,14 +519,10 @@ namespace DeepDuplicateFinder
                     return ParseObjectInfoXml(xml, id);
                 }
             }
-            catch 
-            {
-                
-            }
+            catch { }
             return new ObjectInfo { Id = id, Name = $"Объект_{id}" };
         }
 
-        //Получение атрибутов для XML
         private ObjectInfo ParseObjectInfoXml(string xml, int id)
         {
             try
@@ -635,45 +537,36 @@ namespace DeepDuplicateFinder
                     {
                         string n = a.Name.ToUpper();
                         string valueString = a.Value;
-                        if (n == "C1" || n == "_TYPE")
-                        {
-                            info.Type = valueString;
-                        }
-                        if (n == "C2" || n == "_PRODUCT")
-                        {
-                            info.Name = valueString;
-                        }
-                        if (n == "C3" || n == "_VERSION")
-                        {
-                            info.Version = valueString;
-                        }
-                        if (n == "C4" || n == "_STATE")
-                        {
-                            info.State = valueString;
-                        }
-                                            }
+                        if (n == "C1" || n == "_TYPE") info.Type = valueString;
+                        if (n == "C2" || n == "_PRODUCT") info.Name = valueString;
+                        if (n == "C3" || n == "_VERSION") info.Version = valueString;
+                        if (n == "C4" || n == "_STATE") info.State = valueString;
+                    }
                     if (string.IsNullOrEmpty(info.Name))
                     {
-
                         info.Name = $"{info.Type} {info.Id}".Trim();
-
-
                     }
                     return info;
                 }
             }
-            catch 
-            { 
-                
-            }
+            catch { }
             return new ObjectInfo { Id = id, Name = $"Объект_{id}" };
         }
+    }
+
+    //Класс для деталей с несколькими материалами
+    public class DetailWithMultipleMaterials
+    {
+        public ObjectInfo Detail { get; set; }
+        public List<ObjectInfo> Materials { get; set; } = new List<ObjectInfo>();
+        public List<MaterialGroup> MaterialGroups { get; set; } = new List<MaterialGroup>();
+        public int TotalMaterials { get; set; }
     }
 
     public class DetailWithMaterialDuplicates
     {
         public ObjectInfo Detail { get; set; }
-        public List < MaterialGroup > MaterialGroups { get; set; }
+        public List<MaterialGroup> MaterialGroups { get; set; }
     }
 
     public class ObjectInfo

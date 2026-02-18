@@ -72,6 +72,7 @@
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\ASCON\Loodsman\SDK\Client\Frames\C#\CSActiveXSample\Interops\Interop.PDMTree.dll</HintPath>
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
+    <Reference Include="PresentationFramework" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
