@@ -1,297 +1,144 @@
-﻿﻿using System;
-using System.IO;
-using System.Text;
+﻿using System;
 using System.Collections.Generic;
+using System.Text;
+using System.IO;
 using System.Linq;
-using System.Net;
 
 namespace DeepDuplicateFinder
 {
-    public class MaterialDuplicatesHtmlReportGenerator
+    public class UnifiedReportGenerator
     {
-        public string CreateHtmlReport(ObjectInfo folderInfo,
-                             int totalObjectsCount,
-                             int totalDetailsCount,
-                             int totalMaterialsFound,
-                             int totalDuplicateMaterials,
-                             List<DetailWithMaterialDuplicates> detailsWithDuplicates,
-                             string materialTypeName = "Материал по КД")
+        public string CreateReport(
+            ObjectInfo folderInfo,
+            int totalObjects,
+            int totalDetails,
+            int totalPreparations,
+            int totalMaterials,
+            int totalProblemObjects,
+            List<ReportItem> reportItems)
         {
             try
             {
                 string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
                 string safeName = ReplaceInvalidChars(folderInfo.Name);
-                string fileName = $"material_duplicates_report_{safeName}_{DateTime.Now:yyyyMMdd_HHmmss}.html";
+                string fileName = $"materials_report_{safeName}_{DateTime.Now:yyyyMMdd_HHmmss}.html";
                 string filePath = Path.Combine(desktop, fileName);
+
                 var sb = new StringBuilder();
-                // Начало HTML документа
+
                 sb.AppendLine("<!DOCTYPE html>");
-                sb.AppendLine("<html lang='ru'>");
+                sb.AppendLine("<html>");
                 sb.AppendLine("<head>");
-                sb.AppendLine(" <meta charset='UTF-8'>");
-                sb.AppendLine(" <meta name='viewport' content='width=device-width, initial-scale=1.0'>");
-                sb.AppendLine($" <title>Отчет о дубликатах материалов - {EscapeHtml(folderInfo.Name)}</title>");
-                sb.AppendLine(" <style>");
-                sb.AppendLine(" * {");
-                sb.AppendLine(" margin: 0;");
-                sb.AppendLine(" padding: 0;");
-                sb.AppendLine(" box-sizing: border-box;");
-                sb.AppendLine(" font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" body {");
-                sb.AppendLine(" background-color: #f5f5f5;");
-                sb.AppendLine(" color: #333;");
-                sb.AppendLine(" line-height: 1.6;");
-                sb.AppendLine(" padding: 20px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .container {");
-                sb.AppendLine(" max-width: 1200px;");
-                sb.AppendLine(" margin: 0 auto;");
-                sb.AppendLine(" background-color: white;");
-                sb.AppendLine(" border-radius: 10px;");
-                sb.AppendLine(" box-shadow: 0 2px 15px rgba(0,0,0,0.1);");
-                sb.AppendLine(" padding: 30px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .header {");
-                sb.AppendLine(" text-align: center;");
-                sb.AppendLine(" margin-bottom: 30px;");
-                sb.AppendLine(" padding-bottom: 20px;");
-                sb.AppendLine(" border-bottom: 3px solid #4CAF50;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .date {");
-                sb.AppendLine(" color: #666;");
-                sb.AppendLine(" font-size: 14px;");
-                sb.AppendLine(" margin-top: 5px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .info-section {");
-                sb.AppendLine(" background-color: #f8f9fa;");
-                sb.AppendLine(" padding: 20px;");
-                sb.AppendLine(" border-radius: 8px;");
-                sb.AppendLine(" margin-bottom: 30px;");
-                sb.AppendLine(" border-left: 4px solid #3498db;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .info-item {");
-                sb.AppendLine(" margin-bottom: 10px;");
-                sb.AppendLine(" font-size: 16px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .info-label {");
-                sb.AppendLine(" font-weight: bold;");
-                sb.AppendLine(" margin-right: 5px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .stats-section {");
-                sb.AppendLine(" display: grid;");
-                sb.AppendLine(" grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));");
-                sb.AppendLine(" gap: 20px;");
-                sb.AppendLine(" margin-bottom: 30px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .stat-card {");
-                sb.AppendLine(" background-color: white;");
-                sb.AppendLine(" padding: 20px;");
-                sb.AppendLine(" border-radius: 8px;");
-                sb.AppendLine(" box-shadow: 0 2px 8px rgba(0,0,0,0.1);");
-                sb.AppendLine(" text-align: center;");
-                sb.AppendLine(" border-top: 4px solid;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .stat-card.total { border-top-color: #3498db; }");
-                sb.AppendLine(" .stat-card.details { border-top-color: #2ecc71; }");
-                sb.AppendLine(" .stat-card.materials { border-top-color: #f39c12; }");
-                sb.AppendLine(" .stat-card.duplicates { border-top-color: #e74c3c; }");
-                sb.AppendLine(" .stat-card.with-duplicates { border-top-color: #9b59b6; }");
-                sb.AppendLine(" .stat-number {");
-                sb.AppendLine(" font-size: 36px;");
-                sb.AppendLine(" font-weight: bold;");
-                sb.AppendLine(" margin: 10px 0;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .stat-label {");
-                sb.AppendLine(" font-size: 16px;");
-                sb.AppendLine(" color: #666;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .detail-section {");
-                sb.AppendLine(" margin-bottom: 40px;");
-                sb.AppendLine(" background-color: white;");
-                sb.AppendLine(" border-radius: 8px;");
-                sb.AppendLine(" overflow: hidden;");
-                sb.AppendLine(" box-shadow: 0 2px 10px rgba(0,0,0,0.1);");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .detail-header {");
-                sb.AppendLine(" background-color: #34495e;");
-                sb.AppendLine(" color: white;");
-                sb.AppendLine(" padding: 15px 20px;");
-                sb.AppendLine(" font-size: 18px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .detail-info {");
-                sb.AppendLine(" padding: 15px 20px;");
-                sb.AppendLine(" background-color: #f8f9fa;");
-                sb.AppendLine(" border-bottom: 1px solid #dee2e6;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .material-group {");
-                sb.AppendLine(" margin: 20px;");
-                sb.AppendLine(" padding: 15px;");
-                sb.AppendLine(" background-color: #fff3e0;");
-                sb.AppendLine(" border-radius: 6px;");
-                sb.AppendLine(" border-left: 4px solid #ff9800;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .objects-table {");
-                sb.AppendLine(" width: 100%;");
-                sb.AppendLine(" border-collapse: collapse;");
-                sb.AppendLine(" margin-top: 15px;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .objects-table th {");
-                sb.AppendLine(" background-color: #2c3e50;");
-                sb.AppendLine(" color: white;");
-                sb.AppendLine(" padding: 12px 15px;");
-                sb.AppendLine(" text-align: left;");
-                sb.AppendLine(" font-weight: 600;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .objects-table td {");
-                sb.AppendLine(" padding: 10px 15px;");
-                sb.AppendLine(" border-bottom: 1px solid #dee2e6;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" .no-duplicates {");
-                sb.AppendLine(" text-align: center;");
-                sb.AppendLine(" padding: 40px;");
-                sb.AppendLine(" color: #27ae60;");
-                sb.AppendLine(" font-size: 18px;");
-                sb.AppendLine(" background-color: #f8f9fa;");
-                sb.AppendLine(" border-radius: 8px;");
-                sb.AppendLine(" margin: 20px 0;");
-                sb.AppendLine(" }");
-                sb.AppendLine(" </style>");
+                sb.AppendLine("<meta charset='utf-8'>");
+                sb.AppendLine("<title>Отчет о множественных материалах</title>");
+                sb.AppendLine("<style>");
+                sb.AppendLine("body { font-family: Arial; margin: 20px; background: #f5f5f5; }");
+                sb.AppendLine(".container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }");
+                sb.AppendLine("h1 { color: #333; text-align: center; }");
+                sb.AppendLine(".summary { background: #f0f0f0; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
+                sb.AppendLine(".stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 10px; margin-bottom: 20px; }");
+                sb.AppendLine(".stat-card { background: white; padding: 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }");
+                sb.AppendLine(".stat-number { font-size: 24px; font-weight: bold; color: #2196F3; }");
+                sb.AppendLine(".detail-det { border-left: 4px solid #4CAF50; background: #f9f9f9; margin: 15px 0; padding: 15px; border-radius: 5px; }");
+                sb.AppendLine(".detail-prep { border-left: 4px solid #2196F3; background: #f9f9f9; margin: 15px 0; padding: 15px; border-radius: 5px; }");
+                sb.AppendLine(".material-group { background: #fff3e0; margin: 10px 0; padding: 10px; border-radius: 5px; }");
+                sb.AppendLine("table { width: 100%; border-collapse: collapse; margin-top: 10px; }");
+                sb.AppendLine("th { background: #4CAF50; color: white; padding: 10px; text-align: left; }");
+                sb.AppendLine("td { padding: 8px; border-bottom: 1px solid #ddd; }");
+                sb.AppendLine("tr:hover { background: #f5f5f5; }");
+                sb.AppendLine("</style>");
                 sb.AppendLine("</head>");
                 sb.AppendLine("<body>");
-                sb.AppendLine(" <div class='container'>");
-                // ШАПКА ОТЧЕТА
-                sb.AppendLine(" <div class='header'>");
-                sb.AppendLine(" <h1>🔍 Отчет о дубликатах материалов</h1>");
-                sb.AppendLine($" <div class='date'>Дата создания: {DateTime.Now:dd.MM.yyyy HH:mm:ss}</div>");
-                sb.AppendLine(" </div>");
-                // ИНФОРМАЦИЯ О ПАПКЕ
-                sb.AppendLine(" <div class='info-section'>");
-                sb.AppendLine(" <div class='info-item'><span class='info-label'>📁 Папка:</span> " + EscapeHtml(folderInfo.Version + " " + folderInfo.Type) + "</div>");
-                sb.AppendLine(" <div class='info-item'><span class='info-label'>🆔 ID папки:</span> " + folderInfo.Id + "</div>");
-                sb.AppendLine(" <div class='info-item'><span class='info-label'>🔍 </span> " + EscapeHtml(materialTypeName) + "</div>");
-                sb.AppendLine(" <div class='info-item'><span class='info-label'>📝 Пояснение:</span> Ищем дубликаты материалов ВНУТРИ объектов (не путать с одинаковыми материалами в разных объектах)</div>");
-                sb.AppendLine(" </div>");
-                // СТАТИСТИКА
-                sb.AppendLine(" <div class='stats-section'>");
-                sb.AppendLine(" <div class='stat-card total'>");
-                sb.AppendLine($" <div class='stat-number'>{totalObjectsCount}</div>");
-                sb.AppendLine(" <div class='stat-label'>Всего объектов в папке</div>");
-                sb.AppendLine(" </div>");
-                sb.AppendLine(" <div class='stat-card details'>");
-                sb.AppendLine($" <div class='stat-number'>{totalDetailsCount}</div>");
-                sb.AppendLine(" <div class='stat-label'>Всего деталей</div>");
-                sb.AppendLine(" </div>");
-                sb.AppendLine(" <div class='stat-card materials'>");
-                sb.AppendLine($" <div class='stat-number'>{totalMaterialsFound}</div>");
-                sb.AppendLine(" <div class='stat-label'>Всего связей с материалами</div>");
-                sb.AppendLine(" </div>");
-                sb.AppendLine(" <div class='stat-card with-duplicates'>");
-                sb.AppendLine($" <div class='stat-number'>{detailsWithDuplicates.Count}</div>");
-                sb.AppendLine(" <div class='stat-label'>Деталей с дубликатами</div>");
-                sb.AppendLine(" </div>");
-                sb.AppendLine(" </div>");
-                // ОБЪЕКТЫ С ДУБЛИКАТАМИ МАТЕРИАЛОВ
-                if (detailsWithDuplicates.Count > 0)
+                sb.AppendLine("<div class='container'>");
+
+                // Заголовок
+                sb.AppendLine($"<h1>Отчет о множественных материалах</h1>");
+                sb.AppendLine($"<p><strong>Папка:</strong> {EscapeHtml(folderInfo.Name)} (ID: {folderInfo.Id})</p>");
+                sb.AppendLine($"<p><strong>Дата:</strong> {DateTime.Now:dd.MM.yyyy HH:mm:ss}</p>");
+
+                // Сводка
+                sb.AppendLine("<div class='summary'>");
+                sb.AppendLine("<h2>Сводка</h2>");
+                sb.AppendLine("<div class='stats'>");
+                sb.AppendLine($"<div class='stat-card'><div class='stat-number'>{totalObjects}</div><div>Всего объектов</div></div>");
+                sb.AppendLine($"<div class='stat-card'><div class='stat-number'>{totalDetails}</div><div>Деталей</div></div>");
+                sb.AppendLine($"<div class='stat-card'><div class='stat-number'>{totalPreparations}</div><div>Заготовок</div></div>");
+                sb.AppendLine($"<div class='stat-card'><div class='stat-number'>{totalMaterials}</div><div>Связей с материалами</div></div>");
+                sb.AppendLine($"<div class='stat-card'><div class='stat-number'>{totalProblemObjects}</div><div>Объектов с >1 материалом</div></div>");
+                sb.AppendLine("</div>");
+                sb.AppendLine("</div>");
+
+                if (reportItems.Count == 0)
                 {
-                    sb.AppendLine($" <h2>Найдено {detailsWithDuplicates.Count} объектов с дубликатами материалов:</h2>");
-                    int objectCounter = 1;
-                    foreach (var objWithDuplicates in detailsWithDuplicates)
-                    {
-                        var parentObject = objWithDuplicates.Detail;
-                        sb.AppendLine(" <div class='detail-section'>");
-                        sb.AppendLine(" <div class='detail-header'>");
-                        sb.AppendLine($" 📦 Объект #{objectCounter++}: {EscapeHtml(parentObject.Name)}");
-                        sb.AppendLine(" </div>");
-                        sb.AppendLine(" <div class='detail-info'>");
-                        sb.AppendLine($" <strong>ID:</strong> {parentObject.Id}<br>");
-                        sb.AppendLine($" <strong>Тип:</strong> {EscapeHtml(parentObject.Type)}<br>");
-                        sb.AppendLine($" <strong>Версия:</strong> {EscapeHtml(parentObject.Version)}<br>");
-                        sb.AppendLine($" <strong>Состояние:</strong> {EscapeHtml(parentObject.State)}");
-                        sb.AppendLine(" </div>");
-                        int groupCounter = 1;
-                        foreach (var materialGroup in objWithDuplicates.MaterialGroups)
-                        {
-                            var firstMaterial = materialGroup.Materials.FirstOrDefault();
-                            if (firstMaterial == null)
-                                continue;
-                            sb.AppendLine(" <div class='material-group'>");
-                            sb.AppendLine($" <h3>Дубликат материала (ID: {materialGroup.Key})</h3>");
-                            sb.AppendLine($" <p><strong>Название:</strong> {EscapeHtml(firstMaterial.Name)}</p>");
-                            sb.AppendLine($" <p><strong>Тип:</strong> {EscapeHtml(firstMaterial.Type)}</p>");
-                            sb.AppendLine($" <p><strong>Количество связей в детали:</strong> {materialGroup.Materials.Count}</p>");
-                            sb.AppendLine(" <table class='objects-table'>");
-                            sb.AppendLine(" <thead>");
-                            sb.AppendLine(" <tr>");
-                            sb.AppendLine(" <th>ID материала</th>");
-                            sb.AppendLine(" <th>Название</th>");
-                            sb.AppendLine(" <th>Тип</th>");
-                            sb.AppendLine(" <th>Версия</th>");
-                            sb.AppendLine(" <th>Состояние</th>");
-                            sb.AppendLine(" <th>Количество связей</th>");
-                            sb.AppendLine(" </tr>");
-                            sb.AppendLine(" </thead>");
-                            sb.AppendLine(" <tbody>");
-                            // Выводим только одну строку для каждого дублируемого материала
-                            sb.AppendLine(" <tr>");
-                            sb.AppendLine($" <td>{materialGroup.Key}</td>");
-                            sb.AppendLine($" <td>{EscapeHtml(firstMaterial.Name)}</td>");
-                            sb.AppendLine($" <td>{EscapeHtml(firstMaterial.Type)}</td>");
-                            sb.AppendLine($" <td>{EscapeHtml(firstMaterial.Version)}</td>");
-                            sb.AppendLine($" <td>{EscapeHtml(firstMaterial.State)}</td>");
-                            sb.AppendLine($" <td>{materialGroup.Materials.Count}</td>");
-                            sb.AppendLine(" </tr>");
-                            sb.AppendLine(" </tbody>");
-                            sb.AppendLine(" </table>");
-                            sb.AppendLine(" </div>");
-                        }
-                        sb.AppendLine(" </div>");
-                    }
+                    sb.AppendLine("<div style='text-align: center; padding: 40px; background: #e8f5e8; border-radius: 5px;'>");
+                    sb.AppendLine("<h2 style='color: #4CAF50;'>✅ Объекты с множественными материалами не найдены</h2>");
+                    sb.AppendLine("</div>");
                 }
                 else
                 {
-                    sb.AppendLine(" <div class='no-duplicates'>");
-                    sb.AppendLine(" ✅ Дубликаты материалов в объектах не найдены");
-                    sb.AppendLine(" <p style='margin-top:10px; color:#666;'>Одинаковые материалы в разных объектах не считаются дубликатами.</p>");
-                    sb.AppendLine(" </div>");
+                    sb.AppendLine($"<h2>Найдено объектов с множественными материалами: {reportItems.Count}</h2>");
+
+                    foreach (var item in reportItems)
+                    {
+                        string detailClass = item.ObjectTypeName == "Деталь" ? "detail-det" : "detail-prep";
+
+                        sb.AppendLine($"<div class='{detailClass}'>");
+                        sb.AppendLine($"<h3>{item.ObjectTypeName}: {EscapeHtml(item.Object.Name)} (ID: {item.Object.Id})</h3>");
+                        sb.AppendLine($"<p><strong>Версия:</strong> {EscapeHtml(item.Object.Version)}</p>");
+                        sb.AppendLine($"<p><strong>Тип материала:</strong> {item.MaterialTypeName}</p>");
+                        sb.AppendLine($"<p><strong>Всего материалов:</strong> {item.TotalMaterials}</p>");
+
+                        sb.AppendLine("<h4>Все материалы:</h4>");
+                        sb.AppendLine("<table>");
+                        sb.AppendLine("<tr><th>ID</th><th>Название</th><th>Версия</th><th>Тип</th><th>LinkId</th></tr>");
+
+                        foreach (var m in item.Materials)
+                        {
+                            sb.AppendLine("<tr>");
+                            sb.AppendLine($"<td>{m.Id}</td>");
+                            sb.AppendLine($"<td>{EscapeHtml(m.Name)}</td>");
+                            sb.AppendLine($"<td>{EscapeHtml(m.Version)}</td>");
+                            sb.AppendLine($"<td>{EscapeHtml(m.Type)}</td>");
+                            sb.AppendLine($"<td>{m.LinkId}</td>");
+                            sb.AppendLine("</tr>");
+                        }
+                        sb.AppendLine("</table>");
+
+                        if (item.MaterialGroups.Count > 0)
+                        {
+                            sb.AppendLine("<h4>Дублирующиеся материалы:</h4>");
+                            foreach (var g in item.MaterialGroups)
+                            {
+                                sb.AppendLine("<div class='material-group'>");
+                                sb.AppendLine($"<p><strong>{EscapeHtml(g.MaterialName)}</strong> (Версия: {EscapeHtml(g.MaterialVersion)}) → {g.LinkCount} раз(а)</p>");
+                                sb.AppendLine("</div>");
+                            }
+                        }
+
+                        sb.AppendLine("</div>");
+                    }
                 }
-                sb.AppendLine(" </div>");
+
+                sb.AppendLine("</div>");
                 sb.AppendLine("</body>");
                 sb.AppendLine("</html>");
+
                 File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
-                // Автоматическое открытие файла в браузере
-                try
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = filePath,
-                        UseShellExecute = true
-                    });
-                }
-                catch (Exception ex)
-                {
-                    // Если не удалось открыть, просто игнорируем
-                    System.Diagnostics.Debug.WriteLine($"Не удалось открыть HTML файл: {ex.Message}");
-                }
                 return filePath;
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка сохранения HTML отчета: {ex.Message}");
+                throw new Exception($"Ошибка создания отчета: {ex.Message}");
             }
-        }
-
-        internal string CreateHtmlReport(ObjectInfo folderInfo, int totalObjects, int totalDetails, int totalMaterials, int totalDups, List<DetailWithMultipleMaterials> dups, string mATERIAL_TYPE_NAME)
-        {
-            throw new NotImplementedException();
         }
 
         private string EscapeHtml(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return "";
-            return WebUtility.HtmlEncode(text);
+            return System.Net.WebUtility.HtmlEncode(text);
         }
+
         private string ReplaceInvalidChars(string filename, string replacement = "_")
         {
             if (string.IsNullOrEmpty(filename)) return "unknown";
