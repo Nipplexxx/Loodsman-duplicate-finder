@@ -38,7 +38,6 @@ namespace DeepDuplicateFinder
         public void PluginLoad()
         {
             Log("Плагин загружен");
-            MessageBox((IntPtr)0, "Плагин успешно загружен", "DeepDuplicateFinder", 0);
         }
 
         public void PluginUnload() { }
@@ -64,7 +63,6 @@ namespace DeepDuplicateFinder
                 int selectedId = GetSelectedId(call);
                 if (selectedId == 0)
                 {
-                    MessageBox((IntPtr)0, "Не выбрана папка для анализа.", "DeepDuplicateFinder", 0);
                     return;
                 }
 
@@ -205,47 +203,45 @@ namespace DeepDuplicateFinder
                 } 
                 catch 
                 { 
-                
+                    
                 }
 
-                // Отладочная информация
                 Log("--------------------------Отладка--------------------------");
                 Log(allDebugInfo.ToString());
 
-                // Генерируем отчёт
-                var reportGenerator = new UnifiedReportGenerator();
-                string reportPath = reportGenerator.CreateReport(
-                    folderInfo,
-                    allObjects.Count,
-                    details.Count,
-                    preparations.Count,
-                    totalMaterialsFound,
-                    totalObjectsWithMultipleMaterials,
-                    reportItems);
+                if (reportItems.Count > 0)
+                {
+                    var idsToOpen = string.Join(",", reportItems.Select(r => r.Object.Id));
+                    var opener = new WindowOpener();
+                    opener.ShowObjectsInNewWindows(call, idsToOpen);
 
-                try 
-                { 
-                    System.Diagnostics.Process.Start(reportPath); 
-                } 
-                catch 
-                { 
-                
+                    string objectsList = string.Join("\n", reportItems.Select(r =>
+                        $"{r.ObjectTypeName}: {r.Object.Name} (ID: {r.Object.Id}) — материалов: {r.TotalMaterials}"));
+
+                    string finalMessage =
+                        $"Найдено объектов с несколькими материалами: {reportItems.Count}\n" +
+                        $"{objectsList}\n" +
+                        $"Всего связей с материалами: {totalMaterialsFound}";
+
+                    MessageBox((IntPtr)0, finalMessage, "DeepDuplicateFinder", 0);
                 }
-
-                string finalMessage =
-                    $"Всего объектов: {allObjects.Count}\n" +
-                    $"Деталей: {details.Count}\n" +
-                    $"Заготовок: {preparations.Count}\n" +
-                    $"Всего связей с материалами: {totalMaterialsFound}\n" +
-                    $"Объектов с несколькими материалами: {totalObjectsWithMultipleMaterials}\n" +
-                    $"Отчет: {reportPath}";
-                MessageBox((IntPtr)0, finalMessage, "DeepDuplicateFinder", 0);
+                else
+                {
+                    MessageBox((IntPtr)0, "Объекты с множественными материалами не найдены.", "DeepDuplicateFinder", 0);
+                }
             }
             catch (Exception ex)
             {
                 Log($"Ошибка: {ex}");
                 MessageBox((IntPtr)0, $"Ошибка: {ex.Message}", "DeepDuplicateFinder", 0);
-                try { call.RunMethod("SetFormat", new object[] { "" }); } catch { }
+                try 
+                { 
+                    call.RunMethod("SetFormat", new object[] { "" }); 
+                } 
+                catch 
+                { 
+                
+                }
             }
         }
 
