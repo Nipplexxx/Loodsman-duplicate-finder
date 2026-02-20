@@ -9,10 +9,11 @@ using System.IO;
 
 namespace DeepDuplicateFinder
 {
-    /* Плагин для поиска деталей и заготовок, у которых более одного материала.
-    При выборе папки анализирует все вложенные объекты (прямые и обратные связи),
-    находит детали и заготовки, проверяет количество связанных материалов,
-    формирует отчёт. */
+    /* Плагин для поиска деталей и заготовок, у которых более одного материала,
+       а также деталей, у которых более одной заготовки.
+       При выборе папки анализирует все вложенные объекты (прямые и обратные связи),
+       находит детали и заготовки, проверяет количество связанных материалов и заготовок,
+       открывает проблемные объекты в новых окнах ЛОЦМАН. */
 
     [LoodsmanPlugin]
     public class DeepDuplicateFinder : ILoodsmanNetPlugin
@@ -25,7 +26,7 @@ namespace DeepDuplicateFinder
         private int _preparationTypeId = 0;          // ID типа "Заготовка"
         private int _preparationLinkTypeId = 0;      // ID типа связи "Заготовка для"
 
-        // Константы с именами типов и связей (При смене БД требуется изменить)
+        // Константы с именами типов и связей (при смене БД требуется изменить)
         private const string MATERIAL_TYPE_NAME = "Материал по КД";
         private const string DETAIL_TYPE_NAME = "Деталь";
         private const string MATERIAL_MAIN_TYPE_NAME = "Материал основной";
@@ -66,17 +67,14 @@ namespace DeepDuplicateFinder
                     return;
                 }
 
-                // Переключаем формат ответа на XML
-                try 
-                { 
-                    call.RunMethod("SetFormat", new object[] { "xml" }); 
-                } 
-                catch 
-                { 
-                
+                // Переключаем формат ответа на XML (некоторые методы API возвращают XML)
+                try
+                {
+                    call.RunMethod("SetFormat", new object[] { "xml" });
                 }
+                catch { }
 
-                // Получаем информацию о выбранной папке
+                // Получаем информацию о выбранной папке (для статистики)
                 var folderInfo = GetObjectInfo(call, selectedId);
 
                 // Загружаем словарь типов (ID -> имя)
@@ -98,7 +96,7 @@ namespace DeepDuplicateFinder
                 _preparationLinkTypeId = FindPreparationLinkTypeId(call, allObjects);
                 Log($"ID связи '{PREPARATION_LINK_NAME}': {_preparationLinkTypeId}");
 
-                // Если ID связи известен, ищем заготовки через обратные связи
+                // Если ID связи известен, ищем заготовки через прямые связи (добавляем их в общий список)
                 if (_preparationLinkTypeId != 0)
                 {
                     var preparationsFromLinks = FindPreparationsByLink(call, allObjects);
@@ -117,11 +115,10 @@ namespace DeepDuplicateFinder
                 var preparations = allObjects.Where(o => o.Type.Equals(PREPARATION_TYPE_NAME, StringComparison.OrdinalIgnoreCase)).ToList();
                 Log($"Всего объектов: {allObjects.Count}, деталей: {details.Count}, заготовок: {preparations.Count}");
 
-                // Вывод отчета
-                var reportItems = new List<ReportItem>();
+                // Подготовка данных для отчёта
+                var reportItems = new List<ReportItem>(); // здесь будут детали/заготовки с множественными материалами
                 var allDebugInfo = new StringBuilder();
                 int totalMaterialsFound = 0;
-                int totalObjectsWithMultipleMaterials = 0;
 
                 // Анализ деталей (материалы по КД)
                 if (materialTypeId != 0)
@@ -154,7 +151,6 @@ namespace DeepDuplicateFinder
                                     TotalMaterials = materialLinks.Count,
                                     MaterialTypeName = MATERIAL_TYPE_NAME
                                 });
-                                totalObjectsWithMultipleMaterials++;
                             }
                         }
                     }
@@ -191,35 +187,72 @@ namespace DeepDuplicateFinder
                                     TotalMaterials = materialLinks.Count,
                                     MaterialTypeName = MATERIAL_MAIN_TYPE_NAME
                                 });
-                                totalObjectsWithMultipleMaterials++;
                             }
                         }
                     }
                 }
 
-                try 
-                { 
-                    call.RunMethod("SetFormat", new object[] { "" }); 
-                } 
+                // Собираем детали с несколькими заготовками
+                var detailsWithMultiplePreparations = new List<ObjectInfo>();
+                if (_preparationLinkTypeId != 0)
+                {
+                    foreach (var detail in details)
+                    {
+                        var prepsForDetail = GetPreparationsForDetail(call, detail.Id);
+                        if (prepsForDetail.Count > 1)
+                        {
+                            detailsWithMultiplePreparations.Add(detail);
+                            Log($"Деталь с несколькими заготовками: ID={detail.Id}, Name={detail.Name}, заготовок={prepsForDetail.Count}");
+                        }
+                    }
+                }
+
+                try
+                {
+                    call.RunMethod("SetFormat", new object[] { "" });
+                }
                 catch 
                 { 
-                    
+                
                 }
 
                 Log("--------------------------Отладка--------------------------");
                 Log(allDebugInfo.ToString());
 
-                if (reportItems.Count > 0)
-                {
-                    var idsToOpen = string.Join(",", reportItems.Select(r => r.Object.Id));
-                    var opener = new WindowOpener();
-                    opener.ShowObjectsInNewWindows(call, idsToOpen);
+                // Формируем список ID для открытия (только проблемные объекты)
+                var idsToOpen = new HashSet<int>();
 
-                    string objectsList = string.Join("\n", reportItems.Select(r =>
-                        $"{r.ObjectTypeName}: {r.Object.Name} (ID: {r.Object.Id}) — материалов: {r.TotalMaterials}"));
+                // Детали с несколькими материалами
+                foreach (var item in reportItems.Where(r => r.ObjectTypeName == "Деталь"))
+                    idsToOpen.Add(item.Object.Id);
+
+                // Заготовки с несколькими материалами
+                foreach (var item in reportItems.Where(r => r.ObjectTypeName == "Заготовка"))
+                    idsToOpen.Add(item.Object.Id);
+
+                // Детали с несколькими заготовками
+                foreach (var detail in detailsWithMultiplePreparations)
+                    idsToOpen.Add(detail.Id);
+
+                Log($"Всего объектов для открытия: {idsToOpen.Count}");
+
+                if (idsToOpen.Count > 0)
+                {
+                    string idsString = string.Join(",", idsToOpen);
+                    var opener = new WindowOpener();
+                    opener.ShowObjectsInNewWindows(call, idsString);
+
+                    // Формируем информационное сообщение
+                    string objectsList = "";
+                    if (reportItems.Any(r => r.ObjectTypeName == "Деталь"))
+                        objectsList += $"\nДеталей с >1 материалом: {reportItems.Count(r => r.ObjectTypeName == "Деталь")}";
+                    if (reportItems.Any(r => r.ObjectTypeName == "Заготовка"))
+                        objectsList += $"\nЗаготовок с >1 материалом: {reportItems.Count(r => r.ObjectTypeName == "Заготовка")}";
+                    if (detailsWithMultiplePreparations.Count > 0)
+                        objectsList += $"\nДеталей с несколькими заготовками: {detailsWithMultiplePreparations.Count}";
 
                     string finalMessage =
-                        $"Найдено объектов с несколькими материалами: {reportItems.Count}\n" +
+                        $"Найдено проблемных объектов: {idsToOpen.Count}\n" +
                         $"{objectsList}\n" +
                         $"Всего связей с материалами: {totalMaterialsFound}";
 
@@ -227,25 +260,25 @@ namespace DeepDuplicateFinder
                 }
                 else
                 {
-                    MessageBox((IntPtr)0, "Объекты с множественными материалами не найдены.", "DeepDuplicateFinder", 0);
+                    MessageBox((IntPtr)0, "Объекты с множественными материалами или заготовками не найдены.", "DeepDuplicateFinder", 0);
                 }
             }
             catch (Exception ex)
             {
                 Log($"Ошибка: {ex}");
                 MessageBox((IntPtr)0, $"Ошибка: {ex.Message}", "DeepDuplicateFinder", 0);
-                try 
-                { 
-                    call.RunMethod("SetFormat", new object[] { "" }); 
-                } 
+                try
+                {
+                    call.RunMethod("SetFormat", new object[] { "" });
+                }
                 catch 
-                { 
-                
+                {
+
                 }
             }
         }
 
-        // Определяет ID типа связи "Заготовка для", анализируя обратные связи деталей. Используется, если ID ещё не известен
+        // Определяет ID типа связи "Заготовка для", анализируя прямые связи деталей.
         private int FindPreparationLinkTypeId(INetPluginCall call, List<ObjectInfo> objects)
         {
             var potentialDetails = objects.Where(o => o.Type.Equals(DETAIL_TYPE_NAME, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -255,7 +288,8 @@ namespace DeepDuplicateFinder
             {
                 try
                 {
-                    object res = call.RunMethod("GetLinkedObjectsForObjects", new object[] { detail.Id.ToString(), "", true });
+                    // Ищем прямые связи (reverse=false)
+                    object res = call.RunMethod("GetLinkedObjectsForObjects", new object[] { detail.Id.ToString(), "", false });
                     if (res is string xml && !string.IsNullOrEmpty(xml))
                     {
                         var linked = ParseLinkedObjectsXml(xml);
@@ -276,7 +310,8 @@ namespace DeepDuplicateFinder
             return 0;
         }
 
-        // Ищет заготовки, связанные с деталями через обратную связь "Заготовка для"
+        // Ищет заготовки, связанные с деталями через прямую связь "Заготовка для".
+        // Используется для добавления заготовок в общий список allObjects.
         private List<ObjectInfo> FindPreparationsByLink(INetPluginCall call, List<ObjectInfo> existingObjects)
         {
             var result = new List<ObjectInfo>();
@@ -293,7 +328,8 @@ namespace DeepDuplicateFinder
 
                 foreach (var detail in potentialDetails)
                 {
-                    object res = call.RunMethod("GetLinkedObjectsForObjects", new object[] { detail.Id.ToString(), "", true });
+                    // Ищем прямые связи (reverse=false)
+                    object res = call.RunMethod("GetLinkedObjectsForObjects", new object[] { detail.Id.ToString(), "", false });
                     if (res is string xml && !string.IsNullOrEmpty(xml))
                     {
                         var linkedObjects = ParseLinkedObjectsXml(xml);
@@ -305,26 +341,15 @@ namespace DeepDuplicateFinder
                         var preparationLinks = linkedObjects.Where(o => o.LinkTypeId == _preparationLinkTypeId).ToList();
                         foreach (var link in preparationLinks)
                         {
-                            // Получаем информацию об обоих концах связи
-                            var parentInfo = GetObjectInfo(call, link.ParentId);
-                            var childInfo = GetObjectInfo(call, link.ChildId);
-
-                            int prepId = 0;
-                            if (parentInfo.Type.Equals(PREPARATION_TYPE_NAME, StringComparison.OrdinalIgnoreCase))
-                                prepId = link.ParentId;
-                            else if (childInfo.Type.Equals(PREPARATION_TYPE_NAME, StringComparison.OrdinalIgnoreCase))
-                                prepId = link.ChildId;
-                            else
+                            // В прямой связи заготовка — это дочерний объект (ChildId)
+                            var prepInfo = GetObjectInfo(call, link.ChildId);
+                            if (prepInfo.Id > 0 && prepInfo.Type.Equals(PREPARATION_TYPE_NAME, StringComparison.OrdinalIgnoreCase))
                             {
-                                Log($" Не удалось определить заготовку: ParentType={parentInfo.Type}, ChildType={childInfo.Type}");
-                                continue;
-                            }
-
-                            var prepInfo = GetObjectInfo(call, prepId);
-                            if (prepInfo.Id > 0 && !result.Any(r => r.Id == prepInfo.Id))
-                            {
-                                result.Add(prepInfo);
-                                Log($"Найдена заготовка: ID={prepInfo.Id}, Name={prepInfo.Name}");
+                                if (!result.Any(r => r.Id == prepInfo.Id))
+                                {
+                                    result.Add(prepInfo);
+                                    Log($"Найдена заготовка: ID={prepInfo.Id}, Name={prepInfo.Name}");
+                                }
                             }
                         }
                     }
@@ -337,7 +362,45 @@ namespace DeepDuplicateFinder
             return result;
         }
 
-        // Рекурсивный обход графа связей, начиная с корневого объекта. Собирает все достижимые объекты (прямые и обратные связи)
+        // Возвращает список заготовок, связанных с конкретной деталью через прямую связь.
+        private List<ObjectInfo> GetPreparationsForDetail(INetPluginCall call, int detailId)
+        {
+            var result = new List<ObjectInfo>();
+            try
+            {
+                // Ищем прямые связи (reverse=false)
+                object res = call.RunMethod("GetLinkedObjectsForObjects", new object[] { detailId.ToString(), "", false });
+                if (res is string xml && !string.IsNullOrEmpty(xml))
+                {
+                    var linkedObjects = ParseLinkedObjectsXml(xml);
+                    var preparationLinks = linkedObjects.Where(o => o.LinkTypeId == _preparationLinkTypeId).ToList();
+                    foreach (var link in preparationLinks)
+                    {
+                        // Заготовка — это дочерний объект
+                        var prepInfo = GetObjectInfo(call, link.ChildId);
+                        if (prepInfo.Id > 0 && prepInfo.Type.Equals(PREPARATION_TYPE_NAME, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!result.Any(r => r.Id == prepInfo.Id))
+                            {  
+                                result.Add(prepInfo);
+                            }    
+                        }
+                        else
+                        {
+                            Log($"Внимание: найден объект по связи, но он не является заготовкой: ID={link.ChildId}, Type={prepInfo.Type}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка в GetPreparationsForDetail для детали {detailId}: {ex.Message}");
+            }
+            return result;
+        }
+
+        // Рекурсивный обход графа связей, начиная с корневого объекта.
+        // Собирает все достижимые объекты (прямые и обратные связи).
         private List<ObjectInfo> GetAllObjectsIncludingIndirect(INetPluginCall call, int rootId)
         {
             var objects = new List<ObjectInfo>();
@@ -389,7 +452,7 @@ namespace DeepDuplicateFinder
             return objects;
         }
 
-        // Получает список материалов, связанных с объектом (деталью или заготовкой) через прямые связи
+        // Получает список материалов, связанных с объектом (деталью или заготовкой) через прямые связи.
         private List<ObjectInfo> GetMaterialLinks(INetPluginCall call, int versionId, int materialTypeId)
         {
             var list = new List<ObjectInfo>();
@@ -427,7 +490,7 @@ namespace DeepDuplicateFinder
             return list;
         }
 
-        // Парсит XML
+        // Парсит XML, возвращаемый методом GetLinkedObjectsForObjects.
         private List<LinkedObjectInfo> ParseLinkedObjectsXml(string xmlData)
         {
             var list = new List<LinkedObjectInfo>();
@@ -481,7 +544,7 @@ namespace DeepDuplicateFinder
             return list;
         }
 
-        // Формирует отладочную строку для объекта и его материалов
+        // Формирует отладочную строку для объекта и его материалов.
         private string DebugMaterialSearch(ObjectInfo obj, List<ObjectInfo> materials, string objTypeName, string materialTypeName)
         {
             var sb = new StringBuilder();
@@ -505,7 +568,7 @@ namespace DeepDuplicateFinder
             return sb.ToString();
         }
 
-        // Загружает словарь типов
+        // Загружает словарь типов (ID -> имя) через вызов GetTypeList.
         private Dictionary<int, string> GetTypeDictionary(INetPluginCall call)
         {
             var dict = new Dictionary<int, string>();
@@ -544,7 +607,7 @@ namespace DeepDuplicateFinder
             return dict;
         }
 
-        // Возвращает ID первого выделенного в дереве объекта
+        // Возвращает ID первого выделенного в дереве объекта.
         private int GetSelectedId(INetPluginCall call)
         {
             try
@@ -566,7 +629,7 @@ namespace DeepDuplicateFinder
             return 0;
         }
 
-        // Получает базовую информацию об объекте по его ID
+        // Получает базовую информацию об объекте по его ID.
         private ObjectInfo GetObjectInfo(INetPluginCall call, int id)
         {
             var result = new ObjectInfo { Id = id, Name = $"Объект_{id}", Type = "Неизвестный", Version = "", State = "" };
@@ -588,12 +651,12 @@ namespace DeepDuplicateFinder
             }
             catch 
             { 
-                
+            
             }
             return result;
         }
 
-        // Парсит XML от GetPropObjects
+        // Парсит XML от GetPropObjects.
         private ObjectInfo ParseObjectInfoXml(string xml, int id)
         {
             try
@@ -622,7 +685,7 @@ namespace DeepDuplicateFinder
             }
             catch 
             { 
-                
+            
             }
             return new ObjectInfo { Id = id, Name = $"Объект_{id}" };
         }
