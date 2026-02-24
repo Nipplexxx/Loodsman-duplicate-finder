@@ -5,7 +5,6 @@ using Ascon.Plm.Loodsman.PluginSDK;
 namespace DeepDuplicateFinder
 {
     // Класс для открытия новых окон ЛОЦМАН с переданными объектами.
-    // Использует оконное сообщение WM_OPENOBJECTSINNEWWINDOW (WM_USER + 101).
     public class WindowOpener
     {
         // Импорт функции MessageBox для отображения сообщений об ошибках
@@ -16,14 +15,13 @@ namespace DeepDuplicateFinder
         [DllImport("User32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(HandleRef hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
-        // Структура, соответствующая параметрам сообщения WM_OPENOBJECTSINNEWWINDOW.
         [StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Ansi)]
         private struct TMSGPARAMS
         {
-            public IntPtr Reserved;      // зарезервировано, должен быть null (IntPtr.Zero)
-            public string CheckOutName;   // имя чекаута, если окно нужно открыть в контексте чекаута; иначе null
-            public uint ObjectId;         // идентификатор одиночного объекта (используется, если ObjectIds == null)
-            public string ObjectIds;      // строка с идентификаторами объектов через запятую (например, "616,2790")
+            public IntPtr Reserved;
+            public string CheckOutName;   // имя чекаута
+            public uint ObjectId;         // идентификатор одиночного объекта
+            public string ObjectIds;      // строка с идентификаторами объектов через запятую
         }
 
         // Открывает новые окна ЛОЦМАН для списка объектов, идентификаторы которых переданы в objectIds.
@@ -36,7 +34,7 @@ namespace DeepDuplicateFinder
                 return;
             }
 
-            // Получаем MainHandle через PluginCall (свойство PluginCall интерфейса INetPluginCall)
+            // Получаем MainHandle через PluginCall
             if (pluginCall?.PluginCall == null)
             {
                 MessageBox(IntPtr.Zero, "Не удалось получить MainHandle.", "DeepDuplicateFinder", 0);
@@ -54,29 +52,27 @@ namespace DeepDuplicateFinder
             TMSGPARAMS param = new TMSGPARAMS
             {
                 Reserved = IntPtr.Zero,
-                CheckOutName = null,      // не используем чекаут
-                ObjectId = 0,              // не используем одиночный объект
+                CheckOutName = null,
+                ObjectId = 0,
                 ObjectIds = objectIds      // передаём список ID
             };
 
-            // Выделяем память под структуру в неуправляемой куче
+            // Выделяем память под структуру
             int size = Marshal.SizeOf(param);
             IntPtr ptr = Marshal.AllocHGlobal(size);
             try
             {
-                // Копируем структуру в выделенную память
+                // Копируем структуру
                 Marshal.StructureToPtr(param, ptr, false);
 
-                // Идентификатор сообщения: WM_USER + 101
                 const uint WM_OPENOBJECTSINNEWWINDOW = 0x0400 + 101;
 
                 // Отправляем сообщение главному окну ЛОЦМАН
                 IntPtr result = SendMessage(new HandleRef(null, mainHandle),
                                             WM_OPENOBJECTSINNEWWINDOW,
-                                            ptr,          // wParam – указатель на структуру TMSGPARAMS
-                                            IntPtr.Zero); // lParam – не используется
+                                            ptr,
+                                            IntPtr.Zero);
 
-                // Если результат не 0, возможно, ошибка – логируем (но не прерываем выполнение)
                 if (result != IntPtr.Zero)
                 {
                     string logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "DeepDuplicateFinder.log");
@@ -85,7 +81,7 @@ namespace DeepDuplicateFinder
             }
             finally
             {
-                // Обязательно освобождаем выделенную память
+                // Освобождаем выделенную память
                 Marshal.FreeHGlobal(ptr);
             }
         }
