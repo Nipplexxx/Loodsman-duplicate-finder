@@ -214,9 +214,9 @@ namespace DeepDuplicateFinder
                 Log("--------------------------Отладка--------------------------");
                 Log(allDebugInfo.ToString());
 
-                // Формируем список ID для открытия – только детали
+                // Формируем список ID для открытия – все проблемные объекты (и детали, и заготовки)
                 var idsToOpen = new HashSet<int>();
-                foreach (var item in reportItems.Where(r => r.ObjectTypeName == "Деталь"))
+                foreach (var item in reportItems)
                 {
                     idsToOpen.Add(item.Object.Id);
                 }
@@ -227,15 +227,32 @@ namespace DeepDuplicateFinder
 
                 Log($"Всего объектов для открытия (только детали): {idsToOpen.Count}");
 
+                // Открываем окна, если есть что открывать
                 if (idsToOpen.Count > 0)
                 {
                     string idsString = string.Join(",", idsToOpen);
                     var opener = new WindowOpener();
                     opener.ShowObjectsInNewWindows(call, idsString);
                 }
+
+                // Показываем статистику всегда, если есть проблемы
+                bool hasProblems = reportItems.Count > 0 || detailsWithMultiplePreparations.Count > 0;
+                if (hasProblems)
+                {
+                    string stats = "";
+                    if (reportItems.Any(r => r.ObjectTypeName == "Деталь"))
+                        stats += $"\nДеталей с >1 материалом: {reportItems.Count(r => r.ObjectTypeName == "Деталь")}";
+                    if (reportItems.Any(r => r.ObjectTypeName == "Заготовка"))
+                        stats += $"\nЗаготовок с >1 материалом: {reportItems.Count(r => r.ObjectTypeName == "Заготовка")}";
+                    if (detailsWithMultiplePreparations.Count > 0)
+                        stats += $"\nДеталей с несколькими заготовками: {detailsWithMultiplePreparations.Count}";
+
+                    string finalMessage = $"Найдено проблемных объектов:{stats}";
+                    MessageBox((IntPtr)0, finalMessage, "DeepDuplicateFinder", 0);
+                }
                 else
                 {
-                    MessageBox((IntPtr)0, "Детали с проблемами не найдены.", "DeepDuplicateFinder", 0);
+                    MessageBox((IntPtr)0, "Объекты с множественными материалами или заготовками не найдены.", "DeepDuplicateFinder", 0);
                 }
             }
             catch (Exception ex)

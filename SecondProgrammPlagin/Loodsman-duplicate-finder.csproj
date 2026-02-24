@@ -87,7 +87,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="API\PluginConstants.cs" />
-    <Compile Include="ApplicationPlagin\check_project_type.cs" />
+    <Compile Include="ApplicationPlagin\СheckProjectType.cs" />
     <Compile Include="API\LoodsmanApiHelper.cs" />
     <Compile Include="ApplicationPlagin\WindowOpener.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
