@@ -64,17 +64,17 @@ namespace DeepDuplicateFinder
                 } 
                 catch 
                 { 
-                    
+                
                 }
 
                 int selectedId = GetSelectedId(call);
-                if (selectedId == 0)
-                {
+                if (selectedId == 0) 
+                { 
                     return;
                 }
 
                 _api = new LoodsmanApiHelper(call, Log);
-                
+
                 // Словарь типов
                 _typeDictionary = _api.GetTypeDictionary();
 
@@ -202,6 +202,23 @@ namespace DeepDuplicateFinder
                     }
                 }
 
+                // Находим детали, связанные с проблемными заготовками (у которых >1 материал)
+                var detailsFromProblemPreps = new HashSet<int>();
+                if (_preparationLinkTypeId != 0)
+                {
+                    foreach (var prepItem in reportItems.Where(r => r.ObjectTypeName == "Заготовка"))
+                    {
+                        Log($"Поиск деталей для заготовки {prepItem.Object.Id}");
+                        var linked = _api.GetLinkedObjects(prepItem.Object.Id, false); // reverse=false!
+                        var detailLinks = linked.Where(l => l.LinkTypeId == _preparationLinkTypeId);
+                        foreach (var link in detailLinks)
+                        {
+                            detailsFromProblemPreps.Add(link.ChildId); // ChildId — это деталь
+                            Log($"Найдена деталь {link.ChildId} для заготовки {prepItem.Object.Id}");
+                        }
+                    }
+                }
+
                 try 
                 { 
                     call.RunMethod("SetFormat", new object[] { "" }); 
@@ -216,16 +233,28 @@ namespace DeepDuplicateFinder
 
                 // Формируем список ID для открытия – все проблемные объекты (и детали, и заготовки)
                 var idsToOpen = new HashSet<int>();
-                foreach (var item in reportItems)
+
+                Log($"idsToOpen содержит: {string.Join(",", idsToOpen)}");
+
+                // Детали с >1 материалом
+                foreach (var item in reportItems.Where(r => r.ObjectTypeName == "Деталь"))
                 {
                     idsToOpen.Add(item.Object.Id);
                 }
+
+                // Детали с несколькими заготовками
                 foreach (var detail in detailsWithMultiplePreparations)
                 {
                     idsToOpen.Add(detail.Id);
                 }
 
-                Log($"Всего объектов для открытия (только детали): {idsToOpen.Count}");
+                // Детали, у которых есть заготовки с >1 материалом
+                foreach (var detailId in detailsFromProblemPreps)
+                {
+                    idsToOpen.Add(detailId);
+                }
+
+                Log($"Всего объектов для открытия: {idsToOpen.Count}");
 
                 // Открываем окна, если есть что открывать
                 if (idsToOpen.Count > 0)
@@ -241,11 +270,17 @@ namespace DeepDuplicateFinder
                 {
                     string stats = "";
                     if (reportItems.Any(r => r.ObjectTypeName == "Деталь"))
-                        stats += $"\nДеталей с >1 материалом: {reportItems.Count(r => r.ObjectTypeName == "Деталь")}";
-                    if (reportItems.Any(r => r.ObjectTypeName == "Заготовка"))
-                        stats += $"\nЗаготовок с >1 материалом: {reportItems.Count(r => r.ObjectTypeName == "Заготовка")}";
+                    {
+                        stats += $"\n Деталей с >1 материалом: {reportItems.Count(r => r.ObjectTypeName == "Деталь")}";
+                    }
+                    if (detailsFromProblemPreps.Count > 0)
+                    {
+                        stats += $"\n Деталей, у которых есть заготовки с >1 материалом: {detailsFromProblemPreps.Count}";
+                    }
                     if (detailsWithMultiplePreparations.Count > 0)
-                        stats += $"\nДеталей с несколькими заготовками: {detailsWithMultiplePreparations.Count}";
+                    {
+                        stats += $"\n Деталей с несколькими заготовками: {detailsWithMultiplePreparations.Count}";
+                    }
 
                     string finalMessage = $"Найдено проблемных объектов:{stats}";
                     MessageBox((IntPtr)0, finalMessage, "DeepDuplicateFinder", 0);
@@ -265,7 +300,7 @@ namespace DeepDuplicateFinder
                 } 
                 catch 
                 { 
-                    
+                
                 }
             }
         }
@@ -277,7 +312,9 @@ namespace DeepDuplicateFinder
             sb.AppendLine($"Тип материала: {materialTypeName}");
             sb.AppendLine($"Связей: {materials.Count}");
             foreach (var m in materials)
+            {
                 sb.AppendLine($" - ID {m.Id}: {m.Name} (Версия: {m.Version})");
+            }
             var groups = materials.GroupBy(m => new { m.Name, m.Version }).Where(g => g.Count() > 1).ToList();
             if (groups.Count > 0)
             {

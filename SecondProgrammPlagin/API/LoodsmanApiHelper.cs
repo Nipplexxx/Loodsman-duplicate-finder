@@ -55,6 +55,7 @@ namespace DeepDuplicateFinder
             return dict;
         }
 
+        // Получение информации об объекте
         public ObjectInfo GetObjectInfo(int id)
         {
             var result = new ObjectInfo { Id = id, Name = $"Объект_{id}", Type = "Неизвестный", Version = "", State = "" };
@@ -177,6 +178,7 @@ namespace DeepDuplicateFinder
             return result;
         }
 
+        // Поиск в собранных объектах
         public int FindPreparationLinkTypeId(List<ObjectInfo> allObjects, string preparationLinkName)
         {
             var details = allObjects.Where(o => o.Type.Equals("Деталь", StringComparison.OrdinalIgnoreCase)).ToList();
@@ -202,6 +204,7 @@ namespace DeepDuplicateFinder
             return 0;
         }
 
+        // Обход объектов в прямом и обратном направлении 
         public List<ObjectInfo> GetAllObjectsIncludingIndirect(int rootId)
         {
             var objects = new List<ObjectInfo>();
